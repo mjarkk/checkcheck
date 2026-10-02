@@ -1,0 +1,9 @@
+.DS_Store
+.idea/
+.vscode/
+*.log
+
+server/data/
+server/checkcheck
+server/web/node_modules/
+server/web/dist/

@@ -1,0 +1,1919 @@
+/* Color roles: material-color-utilities, seed #6750A4, SchemeVibrant (same as the Flutter app). */
+:root {
+  color-scheme: light dark;
+
+  --md-sys-color-primary: #6f19ff;
+  --md-sys-color-on-primary: #ffffff;
+  --md-sys-color-primary-container: #e9ddff;
+  --md-sys-color-on-primary-container: #5400cc;
+  /* Fixed roles are the same in both themes, so the dark block leaves them out. */
+  --md-sys-color-primary-fixed: #e9ddff;
+  --md-sys-color-on-primary-fixed-variant: #5400cc;
+  --md-sys-color-secondary: #6b5778;
+  --md-sys-color-on-secondary: #ffffff;
+  --md-sys-color-secondary-container: #f3daff;
+  --md-sys-color-on-secondary-container: #523f5f;
+  --md-sys-color-tertiary: #79507a;
+  --md-sys-color-on-tertiary: #ffffff;
+  --md-sys-color-tertiary-container: #ffd6fc;
+  --md-sys-color-on-tertiary-container: #5f3961;
+  --md-sys-color-error: #ba1a1a;
+  --md-sys-color-on-error: #ffffff;
+  --md-sys-color-error-container: #ffdad6;
+  --md-sys-color-on-error-container: #93000a;
+  --md-sys-color-surface: #fdf7ff;
+  --md-sys-color-on-surface: #1d1a24;
+  --md-sys-color-surface-variant: #e7dff2;
+  --md-sys-color-on-surface-variant: #494453;
+  --md-sys-color-surface-dim: #ded7e6;
+  --md-sys-color-surface-bright: #fdf7ff;
+  --md-sys-color-surface-container-lowest: #ffffff;
+  --md-sys-color-surface-container-low: #f8f1ff;
+  --md-sys-color-surface-container: #f2ebfa;
+  --md-sys-color-surface-container-high: #ede5f4;
+  --md-sys-color-surface-container-highest: #e7e0ef;
+  --md-sys-color-outline: #7a7484;
+  --md-sys-color-outline-variant: #cbc3d5;
+  --md-sys-color-inverse-surface: #322f3a;
+  --md-sys-color-inverse-on-surface: #f5eefd;
+  --md-sys-color-inverse-primary: #cfbcff;
+  --md-sys-color-scrim: #000000;
+  --md-sys-color-shadow: #000000;
+
+  --more-btn-color: var(--md-sys-color-on-primary-container);
+
+
+  --md-sys-shape-corner-extra-small: 4px;
+  --md-sys-shape-corner-small: 8px;
+  --md-sys-shape-corner-medium: 12px;
+  --md-sys-shape-corner-large: 16px;
+  --md-sys-shape-corner-large-increased: 20px;
+  --md-sys-shape-corner-extra-large: 28px;
+  /* Not for corners that spring to a smaller radius: the overshoot dips below zero and flashes them square. Use half the height. */
+  --md-sys-shape-corner-full: 9999px;
+
+  --md-sys-elevation-1: 0 1px 2px rgb(0 0 0 / 0.3), 0 1px 3px 1px rgb(0 0 0 / 0.15);
+  --md-sys-elevation-2: 0 1px 2px rgb(0 0 0 / 0.3), 0 2px 6px 2px rgb(0 0 0 / 0.15);
+  --md-sys-elevation-3: 0 1px 3px rgb(0 0 0 / 0.3), 0 4px 8px 3px rgb(0 0 0 / 0.15);
+
+  /* M3 Expressive springs sampled into linear(); (damping ratio, stiffness): fast spatial (0.6, 800),
+     default spatial (0.8, 380), default effects (1, 1600). Durations are each spring's settle time. */
+  --md-spring-fast-spatial: linear(0, 0.041, 0.145, 0.283, 0.435, 0.584, 0.72, 0.836, 0.929, 0.999, 1.047, 1.077, 1.092, 1.095, 1.089, 1.079, 1.065, 1.051, 1.037, 1.024, 1.014, 1.005, 0.999, 0.995, 0.992, 0.991, 0.991, 0.992, 0.993, 0.994, 0.995, 0.997, 1);
+  --md-spring-fast-spatial-duration: 350ms;
+  --md-spring-default-spatial: linear(0, 0.027, 0.096, 0.188, 0.291, 0.397, 0.499, 0.593, 0.677, 0.75, 0.811, 0.862, 0.903, 0.936, 0.961, 0.98, 0.994, 1.003, 1.009, 1.013, 1.015, 1.015, 1.015, 1.014, 1.012, 1.011, 1.009, 1.007, 1.006, 1.005, 1.004, 1.003, 1);
+  --md-spring-default-spatial-duration: 410ms;
+  --md-spring-effects: linear(0, 0.157, 0.41, 0.623, 0.771, 0.866, 0.923, 0.957, 0.976, 0.987, 0.993, 0.996, 1);
+  --md-spring-effects-duration: 210ms;
+
+  --font: 'Roboto Flex', Roboto, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --mono: ui-monospace, 'Roboto Mono', SFMono-Regular, Menlo, Consolas, monospace;
+
+  font-family: var(--font);
+  font-size: 100%;
+  line-height: 1.5;
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --md-sys-color-primary: #cfbcff;
+    --md-sys-color-on-primary: #3a0092;
+    --md-sys-color-primary-container: #5400cc;
+    --md-sys-color-on-primary-container: #e9ddff;
+    --md-sys-color-secondary: #d7bee4;
+    --md-sys-color-on-secondary: #3b2948;
+    --md-sys-color-secondary-container: #523f5f;
+    --md-sys-color-on-secondary-container: #f3daff;
+    --md-sys-color-tertiary: #e8b7e7;
+    --md-sys-color-on-tertiary: #462349;
+    --md-sys-color-tertiary-container: #5f3961;
+    --md-sys-color-on-tertiary-container: #ffd6fc;
+    --md-sys-color-error: #ffb4ab;
+    --md-sys-color-on-error: #690005;
+    --md-sys-color-error-container: #93000a;
+    --md-sys-color-on-error-container: #ffdad6;
+    --md-sys-color-surface: #15121c;
+    --md-sys-color-on-surface: #e7e0ef;
+    --md-sys-color-surface-variant: #494453;
+    --md-sys-color-on-surface-variant: #cbc3d5;
+    --md-sys-color-surface-dim: #15121c;
+    --md-sys-color-surface-bright: #3b3743;
+    --md-sys-color-surface-container-lowest: #0f0d16;
+    --md-sys-color-surface-container-low: #1d1a24;
+    --md-sys-color-surface-container: #211e28;
+    --md-sys-color-surface-container-high: #2c2833;
+    --md-sys-color-surface-container-highest: #37333e;
+    --md-sys-color-outline: #948e9f;
+    --md-sys-color-outline-variant: #494453;
+    --md-sys-color-inverse-surface: #e7e0ef;
+    --md-sys-color-inverse-on-surface: #322f3a;
+    --md-sys-color-inverse-primary: #6f19ff;
+    --md-sys-color-scrim: #000000;
+    --md-sys-color-shadow: #000000;
+
+    /* primary-container itself is too dark to read on the dark surface. */
+    --more-btn-color: color-mix(in srgb, var(--md-sys-color-primary) 70%, var(--md-sys-color-primary-container));
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background: var(--md-sys-color-surface);
+  color: var(--md-sys-color-on-surface);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+code {
+  font-family: var(--mono);
+  font-size: 0.875em;
+  padding: 0.1em 0.4em;
+  border-radius: var(--md-sys-shape-corner-small);
+  background: var(--md-sys-color-surface-container-highest);
+}
+
+::selection {
+  background: var(--md-sys-color-primary-container);
+  color: var(--md-sys-color-on-primary-container);
+}
+
+:focus-visible {
+  outline: 3px solid var(--md-sys-color-secondary);
+  outline-offset: 2px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.logo {
+  width: 2rem;
+  height: 2rem;
+  flex: none;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.625rem;
+  font-size: 1.375rem;
+  line-height: 1.75rem;
+  font-weight: 750;
+  font-stretch: 110%;
+  letter-spacing: -0.01em;
+}
+
+.summary,
+.list-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  /* Centres the more button over the rows' drag handles. */
+  padding-right: calc(var(--handle-width) / 2 - 0.5rem);
+}
+
+.summary {
+  margin: 0.75rem 0 1.5rem 1rem;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 1rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.summary > p,
+.list-head > :is(h2, h3) {
+  flex: 1;
+  min-width: 0;
+}
+
+.list-head {
+  margin-left: 1rem;
+  animation: fade-in var(--md-spring-effects-duration) var(--md-spring-effects) both;
+}
+
+.section-head {
+  margin-bottom: 0.625rem;
+}
+
+.section-title {
+  margin: 0;
+  color: var(--md-sys-color-primary);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  font-weight: 750;
+  letter-spacing: 0.02em;
+  overflow-wrap: anywhere;
+}
+
+.empty {
+  display: grid;
+  justify-items: center;
+  gap: 1rem;
+  padding: 3.5rem 1rem;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 1rem;
+  text-align: center;
+}
+
+/* M3 state layers: a currentColor overlay at the spec's hover (8%) and focus/pressed (10%) opacities. */
+
+.btn,
+.icon-btn,
+.topbar-btn,
+.drag-handle,
+.client-option,
+.menu-item {
+  position: relative;
+  isolation: isolate;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.btn::before,
+.icon-btn::before,
+.topbar-btn::before,
+.drag-handle::before,
+.client-option::before,
+.menu-item::before,
+.checkbox::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: currentColor;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--md-spring-effects-duration) var(--md-spring-effects);
+}
+
+:is(.btn, .icon-btn, .topbar-btn, .drag-handle, .client-option, .menu-item):not(:disabled):hover::before,
+.checkbox:hover::before {
+  opacity: 0.08;
+}
+
+:is(.btn, .icon-btn, .topbar-btn, .client-option, .menu-item):focus-visible::before,
+.checkbox:has(:focus-visible)::before,
+:is(.btn, .icon-btn, .topbar-btn, .drag-handle, .client-option, .menu-item):not(:disabled):active::before,
+.checkbox:active::before {
+  opacity: 0.1;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 2.5rem;
+  padding: 0 1.5rem;
+  border: 0;
+  border-radius: 1.25rem;
+  background: transparent;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    border-radius var(--md-spring-fast-spatial-duration) var(--md-spring-fast-spatial),
+    background-color var(--md-spring-effects-duration) var(--md-spring-effects),
+    color var(--md-spring-effects-duration) var(--md-spring-effects);
+}
+
+.btn:not(:disabled):active {
+  border-radius: var(--md-sys-shape-corner-medium);
+}
+
+.btn svg {
+  width: 1.125rem;
+  height: 1.125rem;
+  margin-left: -0.25rem;
+}
+
+.btn-large {
+  min-height: 3.5rem;
+  padding: 0 2rem;
+  border-radius: 1.75rem;
+  font-size: 1rem;
+}
+
+.btn-large:not(:disabled):active {
+  border-radius: var(--md-sys-shape-corner-large);
+}
+
+.btn-filled {
+  background: var(--md-sys-color-primary);
+  color: var(--md-sys-color-on-primary);
+}
+
+.btn-tonal {
+  background: var(--md-sys-color-secondary-container);
+  color: var(--md-sys-color-on-secondary-container);
+}
+
+.btn-text {
+  padding: 0 1rem;
+  color: var(--md-sys-color-primary);
+}
+
+.btn-danger {
+  background: var(--md-sys-color-error);
+  color: var(--md-sys-color-on-error);
+}
+
+.btn:disabled {
+  background: color-mix(in srgb, var(--md-sys-color-on-surface) 10%, transparent);
+  color: color-mix(in srgb, var(--md-sys-color-on-surface) 38%, transparent);
+  cursor: default;
+}
+
+.btn-text:disabled {
+  background: transparent;
+}
+
+.icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  flex: none;
+  padding: 0;
+  border: 0;
+  border-radius: 1.25rem;
+  background: transparent;
+  color: var(--md-sys-color-on-surface-variant);
+  cursor: pointer;
+  transition: border-radius var(--md-spring-fast-spatial-duration) var(--md-spring-fast-spatial);
+}
+
+.icon-btn:active {
+  border-radius: var(--md-sys-shape-corner-medium);
+}
+
+.icon-btn-danger:hover {
+  color: var(--md-sys-color-error);
+}
+
+.icon-btn-primary {
+  color: var(--md-sys-color-primary);
+}
+
+.text-field {
+  position: relative;
+  display: block;
+  min-width: 0;
+}
+
+.text-field-input {
+  display: block;
+  width: 100%;
+  height: 3.5rem;
+  padding: 1.5rem 1rem 0.5rem;
+  border: 0;
+  border-radius: var(--md-sys-shape-corner-extra-small) var(--md-sys-shape-corner-extra-small) 0 0;
+  background: var(--md-sys-color-surface-container-highest);
+  box-shadow: inset 0 -1px 0 var(--md-sys-color-on-surface-variant);
+  font-size: 1rem;
+  line-height: 1.5rem;
+  transition:
+    box-shadow var(--md-spring-effects-duration) var(--md-spring-effects),
+    background-color var(--md-spring-effects-duration) var(--md-spring-effects);
+}
+
+.text-field-input:hover {
+  background: color-mix(
+    in srgb,
+    var(--md-sys-color-on-surface) 8%,
+    var(--md-sys-color-surface-container-highest)
+  );
+}
+
+.text-field-input:focus {
+  outline: none;
+  box-shadow: inset 0 -3px 0 var(--md-sys-color-primary);
+}
+
+.text-field-input[aria-invalid='true'] {
+  box-shadow: inset 0 -2px 0 var(--md-sys-color-error);
+}
+
+.text-field-label {
+  position: absolute;
+  top: 1rem;
+  left: 1rem;
+  right: 1rem;
+  overflow: hidden;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 1rem;
+  line-height: 1.5rem;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  transform-origin: left top;
+  transition:
+    transform var(--md-spring-default-spatial-duration) var(--md-spring-default-spatial),
+    color var(--md-spring-effects-duration) var(--md-spring-effects);
+}
+
+.text-field-input:focus + .text-field-label,
+.text-field-input:not(:placeholder-shown) + .text-field-label {
+  transform: translateY(-0.5rem) scale(0.75);
+}
+
+.text-field-input:focus + .text-field-label {
+  color: var(--md-sys-color-primary);
+}
+
+.text-field-input[aria-invalid='true'] + .text-field-label {
+  color: var(--md-sys-color-error);
+}
+
+.text-field-support {
+  margin: 0.25rem 1rem 0;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+.text-field-support.is-error {
+  color: var(--md-sys-color-error);
+}
+
+.inline-input {
+  min-width: 0;
+  height: 2.5rem;
+  padding: 0 0.75rem;
+  border: 0;
+  border-radius: var(--md-sys-shape-corner-small) var(--md-sys-shape-corner-small) 0 0;
+  background: var(--md-sys-color-surface-container-highest);
+  box-shadow: inset 0 -3px 0 var(--md-sys-color-primary);
+  font-size: 1rem;
+}
+
+.inline-input:focus {
+  outline: none;
+}
+
+.checkbox {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  flex: none;
+  border-radius: var(--md-sys-shape-corner-full);
+  color: var(--md-sys-color-on-surface);
+}
+
+.checkbox:has(:checked) {
+  color: var(--md-sys-color-primary);
+}
+
+.checkbox-input {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.checkbox-box {
+  display: grid;
+  place-items: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  border: 2px solid var(--md-sys-color-on-surface-variant);
+  border-radius: 6px;
+  transition:
+    border-radius var(--md-spring-fast-spatial-duration) var(--md-spring-fast-spatial),
+    scale var(--md-spring-fast-spatial-duration) var(--md-spring-fast-spatial),
+    background-color var(--md-spring-effects-duration) var(--md-spring-effects),
+    border-color var(--md-spring-effects-duration) var(--md-spring-effects);
+}
+
+.checkbox-box svg {
+  width: 1rem;
+  height: 1rem;
+  overflow: visible;
+}
+
+.checkbox-box path {
+  fill: none;
+  stroke: var(--md-sys-color-on-primary);
+  stroke-width: 3.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  transition: stroke-dashoffset var(--md-spring-default-spatial-duration) var(--md-spring-default-spatial);
+}
+
+.checkbox-input:checked + .checkbox-box {
+  border-color: var(--md-sys-color-primary);
+  border-radius: 50%;
+  background: var(--md-sys-color-primary);
+  scale: 1.1;
+}
+
+.checkbox-input:checked + .checkbox-box path {
+  stroke-dashoffset: 0;
+}
+
+.checkbox-input:active + .checkbox-box {
+  scale: 0.8;
+}
+
+.checkbox-input:focus-visible + .checkbox-box {
+  outline: 3px solid var(--md-sys-color-secondary);
+  outline-offset: 3px;
+}
+
+.signin {
+  display: grid;
+  place-items: center;
+  min-height: 100dvh;
+  padding: 1rem;
+}
+
+.signin-card {
+  display: grid;
+  gap: 1rem;
+  width: min(100%, 26rem);
+  padding: 2rem 1.5rem 1.5rem;
+  border-radius: var(--md-sys-shape-corner-extra-large);
+  background: var(--md-sys-color-surface-container);
+  animation: rise-in var(--md-spring-default-spatial-duration) var(--md-spring-default-spatial) both;
+}
+
+.signin-card .logo {
+  width: 3rem;
+  height: 3rem;
+}
+
+.signin-title {
+  margin-top: -0.25rem;
+  font-size: 2.75rem;
+  line-height: 1.1;
+  font-weight: 800;
+  font-stretch: 112%;
+  letter-spacing: -0.035em;
+}
+
+.signin-text {
+  margin-bottom: 0.5rem;
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.signin-card .text-field-support {
+  margin-top: -0.75rem;
+}
+
+.signin-card .btn {
+  margin-top: 0.5rem;
+}
+
+.app {
+  width: min(100%, 44rem);
+  margin: 0 auto;
+  padding: 0.5rem 1rem 7rem;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-height: 4rem;
+}
+
+.topbar-actions {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.topbar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: 2.5rem;
+  padding: 0 1rem 0 0.75rem;
+  border: 0;
+  border-radius: 1.25rem;
+  background: transparent;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 0.875rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-radius var(--md-spring-fast-spatial-duration) var(--md-spring-fast-spatial);
+}
+
+.topbar-btn:active {
+  border-radius: var(--md-sys-shape-corner-medium);
+}
+
+.topbar-btn svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+:root {
+  --handle-width: 1.5rem;
+}
+
+@media (pointer: coarse) {
+  :root {
+    --handle-width: 2.25rem;
+  }
+}
+
+.section + .section {
+  margin-top: 1.75rem;
+}
+
+.board.is-spread .section + .section {
+  margin-top: 2.75rem;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.board.is-spread .list {
+  gap: 0.625rem;
+}
+
+.board.is-spread .list-done {
+  min-height: 3.5rem;
+}
+
+.done {
+  margin-top: 1rem;
+}
+
+.board.is-spread .done {
+  margin-top: 1.5rem;
+}
+
+.done-head {
+  margin-bottom: 0.5rem;
+}
+
+.done-title {
+  margin: 0;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+/* Overhangs its line, so the heading stays as tall as its text. */
+.more-btn {
+  margin-block: -0.625rem;
+  color: var(--more-btn-color);
+  transition:
+    border-radius var(--md-spring-fast-spatial-duration) var(--md-spring-fast-spatial),
+    opacity var(--md-spring-effects-duration) var(--md-spring-effects),
+    scale var(--md-spring-fast-spatial-duration) var(--md-spring-fast-spatial);
+  animation: pop-in var(--md-spring-fast-spatial-duration) var(--md-spring-fast-spatial) backwards;
+}
+
+.board.is-spread .more-btn {
+  opacity: 0;
+  scale: 0.85;
+  pointer-events: none;
+}
+
+.item,
+.add-line {
+  display: grid;
+  align-items: center;
+  column-gap: 0.25rem;
+  min-height: 3.5rem;
+  padding: 0.5rem 0.25rem;
+  border-radius: var(--md-sys-shape-corner-extra-small);
+  background: var(--md-sys-color-surface-container);
+  transition:
+    border-radius var(--md-spring-default-spatial-duration) var(--md-spring-default-spatial),
+    background-color var(--md-spring-effects-duration) var(--md-spring-effects);
+  animation: item-in var(--md-spring-fast-spatial-duration) var(--md-spring-fast-spatial) both;
+}
+
+.item {
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-areas: 'check title delete handle';
+  /* Puts the handle's dots as far from the right edge as the checkbox is from the left. */
+  padding-right: 0.75rem;
+}
+
+/* The right gap matches the field's distance to the top and bottom edges, so its corners nest in the line's. */
+.add-line {
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas: 'check title';
+  padding-right: 0.625rem;
+}
+
+.add-line .title-input {
+  border-radius: var(--md-sys-shape-corner-medium);
+}
+
+:is(.item, .add-line):first-child {
+  border-top-left-radius: 22px;
+  border-top-right-radius: 22px;
+}
+
+:is(.item, .add-line):last-child {
+  border-bottom-left-radius: 22px;
+  border-bottom-right-radius: 22px;
+}
+
+.board.is-spread :is(.item, .add-line) {
+  border-radius: var(--md-sys-shape-corner-large-increased);
+}
+
+.item.is-leaving {
+  animation: item-out var(--md-spring-effects-duration) var(--md-spring-effects) both;
+}
+
+.item.is-lifted {
+  display: none;
+}
+
+.drag-gap {
+  flex: none;
+  visibility: hidden;
+}
+
+/* Set on elements that remount mid-motion: their position springs on instead. */
+[data-entered]:not(.is-leaving) {
+  animation: none;
+}
+
+.drag-handle {
+  grid-area: handle;
+  display: grid;
+  place-items: center;
+  width: var(--handle-width);
+  height: 2.5rem;
+  border-radius: var(--md-sys-shape-corner-small);
+  color: var(--md-sys-color-on-surface-variant);
+  cursor: grab;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.drag-handle svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.item-checkbox {
+  grid-area: check;
+}
+
+.add-line-icon {
+  grid-area: check;
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  color: var(--md-sys-color-on-surface-variant);
+  cursor: text;
+}
+
+/* The hidden ::after holds the same text, so the field grows to fit it at any width. */
+.title-field {
+  grid-area: title;
+  display: grid;
+  min-width: 0;
+}
+
+.title-field::after,
+.title-input {
+  grid-area: 1 / 1;
+  min-width: 0;
+  margin: 0;
+  padding: 0.375rem 0.5rem;
+  border: 0;
+  font-size: 1rem;
+  line-height: 1.5rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.title-field::after {
+  content: attr(data-value) ' ';
+  visibility: hidden;
+}
+
+.title-input {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  resize: none;
+  border-radius: var(--md-sys-shape-corner-small);
+  background: transparent;
+  transition:
+    background-color var(--md-spring-effects-duration) var(--md-spring-effects),
+    box-shadow var(--md-spring-effects-duration) var(--md-spring-effects),
+    color var(--md-spring-effects-duration) var(--md-spring-effects);
+}
+
+.title-input::placeholder {
+  color: var(--md-sys-color-on-surface-variant);
+  opacity: 1;
+}
+
+.title-input:focus {
+  outline: none;
+  background: var(--md-sys-color-surface-container-highest);
+  box-shadow: inset 0 -2px 0 var(--md-sys-color-primary);
+}
+
+.is-checked .title-input {
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.item-delete {
+  grid-area: delete;
+}
+
+/* Under the title's text and the row's actions; 0.5rem in is where the title field's text starts. */
+.link-preview {
+  grid-column: title / -1;
+  grid-row: 2;
+  position: relative;
+  container-type: inline-size;
+  margin: -0.25rem 0 0 0.5rem;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+  transform-origin: left top;
+}
+
+.link-preview.is-arriving {
+  animation:
+    preview-in var(--md-spring-fast-spatial-duration) var(--md-spring-fast-spatial) both,
+    fade-in var(--md-spring-effects-duration) var(--md-spring-effects) both;
+}
+
+.link-preview-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: 'line' 'image' 'description';
+  column-gap: 0.75rem;
+}
+
+/* The image beside the text only while the text keeps enough room next to it. */
+@container (min-width: 24rem) {
+  .link-preview-body.has-image {
+    grid-template-columns: 10rem minmax(0, 1fr);
+    grid-template-rows: auto 1fr;
+    grid-template-areas: 'image line' 'image description';
+  }
+
+  .link-preview-body.has-image .link-preview-image {
+    margin: 0.375rem 0 0.25rem;
+  }
+}
+
+.link-preview-line {
+  grid-area: line;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  min-height: 2rem;
+}
+
+.link-preview-link {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 0.375rem;
+  min-width: 0;
+  border-radius: var(--md-sys-shape-corner-extra-small);
+  color: inherit;
+  text-decoration: none;
+}
+
+.link-preview-icon {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+  margin-right: 0.125rem;
+  border-radius: var(--md-sys-shape-corner-extra-small);
+  object-fit: contain;
+}
+
+.link-preview-site,
+.link-preview-title {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.link-preview-site {
+  flex: none;
+  max-width: 60%;
+  color: var(--md-sys-color-on-surface);
+  font-weight: 600;
+}
+
+.link-preview-dot {
+  flex: none;
+}
+
+.link-preview-title {
+  flex: 0 1 auto;
+}
+
+.link-preview-link:hover :is(.link-preview-site, .link-preview-title) {
+  text-decoration: underline;
+}
+
+.link-preview-toggle {
+  width: 2rem;
+  height: 2rem;
+  margin-left: auto;
+  /* Centres the chevron under the drag handle. */
+  margin-right: calc((var(--handle-width) - 2rem) / 2);
+}
+
+.link-preview-toggle svg {
+  width: 1.25rem;
+  height: 1.25rem;
+  transition: rotate var(--md-spring-fast-spatial-duration) var(--md-spring-fast-spatial);
+}
+
+.link-preview.is-expanded .link-preview-toggle svg {
+  rotate: 180deg;
+}
+
+.link-preview-image {
+  grid-area: image;
+  display: block;
+  margin: 0.25rem 0 0.5rem;
+  transform-origin: left top;
+}
+
+.link-preview-image img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1.91 / 1;
+  border-radius: var(--md-sys-shape-corner-small);
+  background: var(--md-sys-color-surface-container-highest);
+  object-fit: cover;
+}
+
+.link-preview-description {
+  grid-area: description;
+  display: -webkit-box;
+  margin: 0 0 0.25rem;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  transform-origin: left top;
+}
+
+.link-preview-body.is-toggled .link-preview-image {
+  animation:
+    image-in var(--md-spring-fast-spatial-duration) var(--md-spring-fast-spatial) both,
+    fade-in var(--md-spring-effects-duration) var(--md-spring-effects) both;
+}
+
+.link-preview-body.is-toggled .link-preview-description {
+  animation:
+    description-in var(--md-spring-default-spatial-duration) var(--md-spring-default-spatial) both,
+    fade-in var(--md-spring-effects-duration) var(--md-spring-effects) both;
+}
+
+.link-preview-ghost {
+  position: absolute;
+  margin: 0;
+  pointer-events: none;
+}
+
+.is-checked .link-preview-site {
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.is-checked .link-preview img {
+  opacity: 0.6;
+}
+
+/* Touch screens have no hover, so they always show the row's actions. */
+@media (hover: hover) and (pointer: fine) {
+  :is(.item, .add-line):hover .title-input:not(:focus) {
+    background: color-mix(in srgb, var(--md-sys-color-on-surface) 6%, transparent);
+  }
+
+  .board.is-spread :is(.item, .add-line):hover .title-input:not(:focus) {
+    background: transparent;
+  }
+
+  .item .item-action {
+    opacity: 0;
+    scale: 0.85;
+    transition:
+      opacity var(--md-spring-effects-duration) var(--md-spring-effects),
+      scale var(--md-spring-fast-spatial-duration) var(--md-spring-fast-spatial),
+      background-color var(--md-spring-effects-duration) var(--md-spring-effects),
+      border-radius var(--md-spring-fast-spatial-duration) var(--md-spring-fast-spatial);
+  }
+
+  .item:is(:hover, :focus-within) .item-action {
+    opacity: 1;
+    scale: 1;
+  }
+
+  .board.is-spread .item .item-action {
+    opacity: 0;
+    scale: 0.85;
+  }
+
+  .drag-overlay .item-action {
+    opacity: 1;
+    scale: 1;
+  }
+}
+
+.drag-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 30;
+  margin: 0;
+  list-style: none;
+  pointer-events: none;
+  border-radius: var(--md-sys-shape-corner-large-increased);
+  background: var(--md-sys-color-surface-container-high);
+  box-shadow: var(--md-sys-elevation-3);
+  will-change: transform;
+}
+
+.board-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-top: 2.5rem;
+}
+
+/* Recently deleted, built from the main page's summary, section, list and row classes. */
+.page-head {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  /* Puts the arrow's tip under the logo's left edge. */
+  margin: 0.5rem 0 0 -0.75rem;
+}
+
+.page-title {
+  min-width: 0;
+  font-size: 1.625rem;
+  line-height: 2rem;
+  font-weight: 750;
+  font-stretch: 108%;
+  letter-spacing: -0.015em;
+  overflow-wrap: anywhere;
+}
+
+/* Rows and headings have their own; this brings in the rest when the page switches. */
+.summary,
+.board-footer,
+.page-head,
+.deleted-empty,
+.paste-bar {
+  animation: item-in var(--md-spring-fast-spatial-duration) var(--md-spring-fast-spatial) both;
+}
+
+.list-head.is-leaving {
+  animation: item-out var(--md-spring-effects-duration) var(--md-spring-effects) both;
+}
+
+/* The restore button is centred where the main rows' drag handle is. */
+.deleted-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: 'title restore';
+  padding-left: 0.5rem;
+  padding-right: calc(var(--handle-width) / 2 - 0.5rem);
+}
+
+.deleted-restore {
+  grid-area: restore;
+}
+
+/* Add items: the label fills the row, so tapping anywhere on it toggles the line. */
+.paste-row {
+  display: block;
+  padding: 0;
+}
+
+.paste-row label {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-height: 3.5rem;
+  padding: 0.5rem 0.75rem 0.5rem 0.25rem;
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Pinned to the screen; the app's bottom padding keeps the last row clear of it. */
+.paste-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  /* Lines the buttons up with the rows' right edge. */
+  padding: 0.75rem max(1rem, 50% - 21rem) max(0.75rem, env(safe-area-inset-bottom));
+  background: var(--md-sys-color-surface);
+}
+
+.new-category-drop {
+  position: fixed;
+  left: max(1.5rem, env(safe-area-inset-left));
+  bottom: max(1.5rem, env(safe-area-inset-bottom));
+  /* Above the lifted row, which shrinks into it from behind. */
+  z-index: 35;
+  display: grid;
+  place-items: center;
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: 50%;
+  background: var(--md-sys-color-primary-container);
+  color: var(--md-sys-color-on-primary-container);
+  box-shadow: var(--md-sys-elevation-3);
+  pointer-events: none;
+  opacity: 0;
+  translate: 0 7rem;
+  scale: 0.4;
+  transition:
+    translate var(--md-spring-fast-spatial-duration) var(--md-spring-fast-spatial),
+    scale var(--md-spring-fast-spatial-duration) var(--md-spring-fast-spatial),
+    opacity var(--md-spring-effects-duration) var(--md-spring-effects),
+    background-color var(--md-spring-effects-duration) var(--md-spring-effects),
+    color var(--md-spring-effects-duration) var(--md-spring-effects);
+}
+
+.new-category-drop.is-shown {
+  opacity: 1;
+  translate: 0 0;
+  scale: 1;
+}
+
+.new-category-drop.is-over {
+  scale: 1.3;
+  background: var(--md-sys-color-primary);
+  color: var(--md-sys-color-on-primary);
+}
+
+.motion-ghost {
+  position: fixed;
+  z-index: 5;
+  margin: 0;
+  list-style: none;
+  pointer-events: none;
+}
+
+.is-grabbing {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.is-grabbing,
+.is-grabbing * {
+  cursor: grabbing !important;
+}
+
+/* translate/scale rather than transform: motion.ts owns the inline transform of these elements. */
+@keyframes item-in {
+  from {
+    opacity: 0;
+    translate: 0 0.75rem;
+    scale: 0.96;
+  }
+}
+
+@keyframes item-out {
+  to {
+    opacity: 0;
+    scale: 0.94;
+  }
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(1.5rem) scale(0.94);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    scale: 0.6;
+  }
+}
+
+@keyframes preview-in {
+  from {
+    translate: 0 -0.5rem;
+    scale: 0.9;
+  }
+}
+
+@keyframes image-in {
+  from {
+    scale: 0.6;
+  }
+}
+
+@keyframes description-in {
+  from {
+    translate: 0 -0.5rem;
+    scale: 0.96;
+  }
+}
+
+/* inset and margin undo the UA's centring of popovers; MoreMenu positions it at its button. */
+.menu {
+  position: fixed;
+  inset: auto;
+  min-width: 13rem;
+  margin: 0;
+  padding: 0.25rem;
+  overflow: visible;
+  border: 0;
+  border-radius: var(--md-sys-shape-corner-large);
+  background: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-on-surface);
+  box-shadow: var(--md-sys-elevation-2);
+  opacity: 0;
+  scale: 0.92;
+  transition:
+    opacity var(--md-spring-effects-duration) var(--md-spring-effects),
+    scale var(--md-spring-effects-duration) var(--md-spring-effects),
+    display var(--md-spring-effects-duration) allow-discrete,
+    overlay var(--md-spring-effects-duration) allow-discrete;
+}
+
+.menu:popover-open {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  opacity: 1;
+  scale: 1;
+  transition:
+    opacity var(--md-spring-effects-duration) var(--md-spring-effects),
+    scale var(--md-spring-fast-spatial-duration) var(--md-spring-fast-spatial);
+}
+
+@starting-style {
+  .menu:popover-open {
+    opacity: 0;
+    scale: 0.6;
+  }
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  min-height: 3rem;
+  padding: 0 1.25rem 0 0.75rem;
+  border: 0;
+  border-radius: var(--md-sys-shape-corner-medium);
+  background: transparent;
+  font-size: 0.9375rem;
+  line-height: 1.25rem;
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.menu-item svg {
+  flex: none;
+  width: 1.25rem;
+  height: 1.25rem;
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.menu-item.is-danger,
+.menu-item.is-danger svg {
+  color: var(--md-sys-color-error);
+}
+
+.menu-item:disabled,
+.menu-item:disabled svg {
+  color: color-mix(in srgb, var(--md-sys-color-on-surface) 38%, transparent);
+  cursor: default;
+}
+
+.menu-item:focus-visible {
+  outline-offset: -3px;
+}
+
+.notice {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  padding: 0.25rem 0.25rem 0.25rem 1rem;
+  border-radius: var(--md-sys-shape-corner-large);
+  background: var(--md-sys-color-error-container);
+  color: var(--md-sys-color-on-error-container);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  animation: fade-in var(--md-spring-effects-duration) var(--md-spring-effects);
+}
+
+.notice-message {
+  flex: 1;
+  padding: 0.625rem 0;
+}
+
+.notice .icon-btn {
+  color: inherit;
+}
+
+.notice-floating {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: max(1rem, env(safe-area-inset-bottom));
+  z-index: 10;
+  width: min(calc(100% - 2rem), 34rem);
+  margin: 0 auto;
+  border-radius: var(--md-sys-shape-corner-medium);
+  background: var(--md-sys-color-inverse-surface);
+  color: var(--md-sys-color-inverse-on-surface);
+  box-shadow: var(--md-sys-elevation-3);
+  animation: rise-in var(--md-spring-fast-spatial-duration) var(--md-spring-fast-spatial) both;
+}
+
+.dialog {
+  width: min(calc(100% - 2rem), 30rem);
+  max-height: min(calc(100dvh - 2rem), 44rem);
+  padding: 1.5rem;
+  border: 0;
+  border-radius: var(--md-sys-shape-corner-extra-large);
+  background: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-on-surface);
+  box-shadow: var(--md-sys-elevation-3);
+}
+
+.dialog[open] {
+  /* backwards, not both: a held end transform would make the dialog the containing block of the
+     fixed drag overlay inside it, offsetting and clipping it. */
+  animation: rise-in var(--md-spring-fast-spatial-duration) var(--md-spring-fast-spatial) backwards;
+}
+
+.dialog::backdrop {
+  background: color-mix(in srgb, var(--md-sys-color-scrim) 40%, transparent);
+  animation: fade-in var(--md-spring-effects-duration) var(--md-spring-effects);
+}
+
+.dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin: -0.5rem -0.5rem 1rem 0;
+}
+
+.dialog-title {
+  font-size: 1.625rem;
+  line-height: 2rem;
+  font-weight: 750;
+  font-stretch: 108%;
+  letter-spacing: -0.015em;
+  overflow-wrap: anywhere;
+}
+
+.dialog-text {
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 0.9375rem;
+}
+
+.dialog-head + .dialog-text {
+  margin: -0.5rem 0 1.25rem;
+}
+
+.dialog-confirm {
+  width: min(calc(100% - 2rem), 25rem);
+}
+
+.dialog-confirm .dialog-title {
+  margin-bottom: 1rem;
+}
+
+.dialog-confirm .dialog-field {
+  margin-top: 1.25rem;
+}
+
+.dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1.5rem;
+}
+
+.inline-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 0.75rem;
+}
+
+.category-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 1.25rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.category-list.is-spread {
+  gap: 0.5rem;
+}
+
+.category-list.is-spread .category-row {
+  border-radius: var(--md-sys-shape-corner-large-increased);
+}
+
+.category-row.is-lifted {
+  display: none;
+}
+
+.category-row.is-uncategorized .category-name {
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.category-row {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-height: 3.5rem;
+  padding: 0.5rem 0.75rem 0.5rem 1rem;
+  border-radius: var(--md-sys-shape-corner-extra-small);
+  background: var(--md-sys-color-surface-container-lowest);
+}
+
+.category-row:first-child {
+  border-top-left-radius: var(--md-sys-shape-corner-large-increased);
+  border-top-right-radius: var(--md-sys-shape-corner-large-increased);
+}
+
+.category-row:last-child {
+  border-bottom-left-radius: var(--md-sys-shape-corner-large-increased);
+  border-bottom-right-radius: var(--md-sys-shape-corner-large-increased);
+}
+
+.category-name {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 0.5rem;
+  min-width: 0;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.category-count {
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 0.8125rem;
+  font-weight: 400;
+}
+
+.category-name-input {
+  flex: 1;
+}
+
+.category-list + .empty,
+.dialog-categories .empty {
+  padding: 2rem 1rem 1rem;
+}
+
+.dialog-move[open],
+.dialog-move form {
+  display: flex;
+  flex-direction: column;
+}
+
+.dialog-move form {
+  min-height: 0;
+}
+
+.dialog-move .dialog-actions {
+  margin-top: 1rem;
+}
+
+/* Sized to its rows until the dialog reaches its max-height, then the only part that scrolls. */
+.move-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  margin: 1.25rem -1.5rem 0;
+  padding: 1rem 1.5rem;
+  border-block: 1px solid var(--md-sys-color-outline-variant);
+  list-style: none;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* Chrome lets Tab focus a scroller; the dialog's edges would clip its ring. */
+.move-panel:focus-visible {
+  outline-offset: -3px;
+}
+
+.move-option {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 3.5rem;
+  padding: 0.5rem 1rem;
+  border: 0;
+  border-radius: var(--md-sys-shape-corner-extra-small);
+  background: var(--md-sys-color-surface-container-lowest);
+  text-align: left;
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.move-panel li:first-child .move-option {
+  border-top-left-radius: var(--md-sys-shape-corner-large-increased);
+  border-top-right-radius: var(--md-sys-shape-corner-large-increased);
+}
+
+.move-panel li:last-child .move-option {
+  border-bottom-left-radius: var(--md-sys-shape-corner-large-increased);
+  border-bottom-right-radius: var(--md-sys-shape-corner-large-increased);
+}
+
+.move-option::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: currentColor;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--md-spring-effects-duration) var(--md-spring-effects);
+}
+
+.move-option:hover::before {
+  opacity: 0.08;
+}
+
+.move-option:focus-visible::before,
+.move-option:active::before {
+  opacity: 0.1;
+}
+
+.move-option.is-uncategorized .category-name {
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.dialog-connect {
+  /* The full-width code makes this one taller than the 44rem the other dialogs stop at. */
+  max-height: calc(100dvh - 2rem);
+}
+
+.qr-frame {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  margin-top: 1.25rem;
+  border-radius: var(--md-sys-shape-corner-extra-large);
+  /* Fixed roles keep the code dark-on-light in dark mode too: scanners struggle with inverted codes. */
+  background: var(--md-sys-color-primary-fixed);
+  color: var(--md-sys-color-on-primary-fixed-variant);
+}
+
+.qr {
+  display: block;
+  width: 100%;
+  height: 100%;
+  animation: rise-in var(--md-spring-default-spatial-duration) var(--md-spring-default-spatial) both;
+}
+
+.qr-placeholder {
+  padding: 1.5rem;
+  text-align: center;
+}
+
+.token-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+  margin-top: 1rem;
+  padding: 0.75rem 1rem;
+  border-radius: var(--md-sys-shape-corner-large);
+  background: var(--md-sys-color-tertiary-container);
+  color: var(--md-sys-color-on-tertiary-container);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+
+.token-warning svg {
+  flex: none;
+  margin-top: 0.0625rem;
+}
+
+.dialog-assistant {
+  width: min(calc(100% - 2rem), 36rem);
+  height: min(calc(100dvh - 2rem), 44rem);
+}
+
+.dialog-assistant[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.assistant-panel {
+  flex: 1;
+  min-height: 0;
+  margin: 0 -1.5rem;
+  padding: 1.25rem 1.5rem;
+  border-block: 1px solid var(--md-sys-color-outline-variant);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.dialog-assistant .dialog-actions {
+  margin-top: 1rem;
+}
+
+.client-picker {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 1rem;
+}
+
+.client-option {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 2.5rem;
+  padding: 0.5rem 0.75rem;
+  border: 0;
+  border-radius: var(--md-sys-shape-corner-small);
+  background: var(--md-sys-color-surface-container-highest);
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    border-radius var(--md-spring-fast-spatial-duration) var(--md-spring-fast-spatial),
+    background-color var(--md-spring-effects-duration) var(--md-spring-effects),
+    color var(--md-spring-effects-duration) var(--md-spring-effects);
+}
+
+.client-option:first-child {
+  border-top-left-radius: 1.25rem;
+  border-bottom-left-radius: 1.25rem;
+}
+
+.client-option:last-child {
+  border-top-right-radius: 1.25rem;
+  border-bottom-right-radius: 1.25rem;
+}
+
+.client-option[aria-pressed='true'] {
+  border-radius: 1.25rem;
+  background: var(--md-sys-color-primary);
+  color: var(--md-sys-color-on-primary);
+}
+
+.client-option:not([aria-pressed='true']):active {
+  border-radius: var(--md-sys-shape-corner-medium);
+}
+
+.steps {
+  display: grid;
+  gap: 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+
+.steps > li {
+  position: relative;
+  min-width: 0;
+  padding-left: 2.5rem;
+  counter-increment: step;
+}
+
+.steps > li::before {
+  content: counter(step);
+  position: absolute;
+  top: -0.125rem;
+  left: 0;
+  display: grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: var(--md-sys-shape-corner-full);
+  background: var(--md-sys-color-primary-container);
+  color: var(--md-sys-color-on-primary-container);
+  font-size: 0.875rem;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+}
+
+.steps-intro {
+  margin-bottom: 1rem;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 0.9375rem;
+}
+
+.steps-heading {
+  margin: 2rem 0 0.5rem;
+  font-size: 1.125rem;
+  line-height: 1.5rem;
+  font-weight: 750;
+  font-stretch: 108%;
+}
+
+.steps-plain {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.steps-note {
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 0.875rem;
+}
+
+.steps a {
+  color: var(--md-sys-color-primary);
+  font-weight: 600;
+}
+
+.snippet {
+  margin: 0.75rem 0 0;
+  border-radius: var(--md-sys-shape-corner-large);
+  background: var(--md-sys-color-surface-container-lowest);
+}
+
+.steps-plain .snippet {
+  margin: 0;
+}
+
+.snippet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-height: 2.75rem;
+  padding: 0.25rem 0.25rem 0 1rem;
+}
+
+.snippet-label {
+  overflow: hidden;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.snippet-copy {
+  flex: none;
+  padding: 0 1rem;
+}
+
+.snippet-code {
+  margin: 0;
+  padding: 0 1rem 1rem;
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.snippet-code.is-nowrap {
+  overflow-x: auto;
+  white-space: pre;
+  overflow-wrap: normal;
+}
+
+.snippet-code code {
+  padding: 0;
+  background: none;
+  font-size: inherit;
+}
+
+/* The icon buttons need the wordmark's room on the narrowest phones. */
+@media (max-width: 21.24rem) {
+  .brand-name {
+    display: none;
+  }
+}
+
+/* Below 40rem the labelled buttons no longer fit next to the brand. */
+@media (max-width: 39.99rem) {
+  .topbar-btn {
+    width: 2.5rem;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .topbar-btn-label {
+    display: none;
+  }
+}
+
+/* 1ms rather than none: a leaving row is only removed once its animationend fires. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after,
+  ::backdrop {
+    animation-duration: 1ms !important;
+    animation-delay: 0s !important;
+    transition-duration: 1ms !important;
+  }
+}
+
+@media (forced-colors: active) {
+  .checkbox-input {
+    opacity: 1;
+    position: static;
+    width: 1.25rem;
+    height: 1.25rem;
+  }
+
+  .checkbox-box {
+    display: none;
+  }
+}

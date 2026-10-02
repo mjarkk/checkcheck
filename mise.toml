@@ -1,0 +1,65 @@
+[tools]
+go = "1.27.1"
+node = "26.4.0"
+flutter = "3.47.5"
+
+[tasks.dev]
+description = "Go server (:8181) + Vite with hot reload (:5173) — open http://localhost:5173, token: dev"
+depends = ["dev:server", "dev:web"]
+
+[tasks."dev:server"]
+description = "Go API + MCP on :8181 without the embedded frontend"
+dir = "{{config_root}}/server"
+env = { CHECKCHECK_ADDR = ":8181", CHECKCHECK_TOKEN = "dev", CHECKCHECK_DATA_DIR = "data" }
+run = "go run -tags dev ."
+
+[tasks."dev:web"]
+description = "Vite dev server on 0.0.0.0:5173, proxying /api and /mcp to :8181"
+dir = "{{config_root}}/server/web"
+depends = ["web:install"]
+run = "npm run dev"
+
+[tasks."web:install"]
+dir = "{{config_root}}/server/web"
+run = "npm install"
+
+[tasks."web:build"]
+dir = "{{config_root}}/server/web"
+depends = ["web:install"]
+run = "npm run build"
+
+[tasks.build]
+description = "Production binary at server/checkcheck with the frontend embedded"
+dir = "{{config_root}}/server"
+depends = ["web:build"]
+run = "go build -trimpath -o checkcheck ."
+
+[tasks."docker:build"]
+dir = "{{config_root}}/server"
+run = "docker build -t checkcheck ."
+
+[tasks.test]
+depends = ["test:server", "test:web", "test:mobile"]
+
+[tasks."test:server"]
+dir = "{{config_root}}/server"
+run = ["go vet -tags dev ./...", "go test -tags dev ./..."]
+
+[tasks."test:web"]
+description = "Typecheck + production build of the frontend"
+depends = ["web:build"]
+
+[tasks."test:mobile"]
+dir = "{{config_root}}/mobile"
+run = ["flutter analyze", "flutter test"]
+
+[tasks."mobile:run"]
+description = "Run the iOS app on a booted simulator or connected device"
+dir = "{{config_root}}/mobile"
+run = "flutter run"
+
+[tasks."mobile:install"]
+description = "Release build installed on a paired iPhone over USB or Wi-Fi; asks which one when several are paired"
+dir = "{{config_root}}/mobile"
+raw = true
+run = "tool/install.sh"
