@@ -3,9 +3,11 @@ package mcpserver
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -77,6 +79,30 @@ func TestRejectsMissingOrWrongToken(t *testing.T) {
 			cs.Close()
 			t.Errorf("token %q: connected, want auth failure", token)
 		}
+	}
+}
+
+func TestInitializedIsAnsweredWithToolsChanged(t *testing.T) {
+	_, url := setup(t)
+	req, err := http.NewRequest("POST", url, strings.NewReader(`{"jsonrpc":"2.0","method":"notifications/initialized"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer secret")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	body, _ := io.ReadAll(res.Body)
+	var msg struct {
+		Method string           `json:"method"`
+		ID     *json.RawMessage `json:"id"`
+	}
+	if res.StatusCode != 200 || json.Unmarshal(body, &msg) != nil || msg.Method != "notifications/tools/list_changed" || msg.ID != nil {
+		t.Errorf("got %d %s, want 200 with a notifications/tools/list_changed notification", res.StatusCode, body)
 	}
 }
 

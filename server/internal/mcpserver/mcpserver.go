@@ -1,7 +1,10 @@
 package mcpserver
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
 	"slices"
@@ -19,7 +22,7 @@ func Handler(st *store.Store) http.Handler {
 		Instructions: instructions,
 	})
 	addTools(srv, st)
-	return mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return srv }, &mcp.StreamableHTTPOptions{
+	return announceToolsChanged(mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return srv }, &mcp.StreamableHTTPOptions{
 		Stateless:    true,
 		JSONResponse: true,
 		// The bearer token already defeats DNS rebinding, and this check
@@ -27,6 +30,35 @@ func Handler(st *store.Store) http.Handler {
 		// Host header.
 		DisableLocalhostProtection: true,
 		Logger:                     slog.Default(),
+	}))
+}
+
+// Claude's connectors keep a stale tool list for servers that never announce
+// changes, and a stateless server has no stream to announce them on. So this
+// answers notifications/initialized with one, as github.com/back-to-code/go-mcp
+// does, instead of the empty 202 the spec asks for; spec clients ignore it.
+func announceToolsChanged(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			next.ServeHTTP(w, r)
+			return
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "failed to read body", http.StatusBadRequest)
+			return
+		}
+		var msg struct {
+			Method string          `json:"method"`
+			ID     json.RawMessage `json:"id"`
+		}
+		if json.Unmarshal(body, &msg) == nil && msg.Method == "notifications/initialized" && msg.ID == nil {
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `{"jsonrpc":"2.0","method":"notifications/tools/list_changed"}`)
+			return
+		}
+		r.Body = io.NopCloser(bytes.NewReader(body))
+		next.ServeHTTP(w, r)
 	})
 }
 
