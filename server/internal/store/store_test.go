@@ -363,6 +363,90 @@ func TestItems(t *testing.T) {
 	}
 }
 
+func TestCreateItems(t *testing.T) {
+	ctx := context.Background()
+	s := openTest(t)
+	c, err := s.CreateCategory(ctx, "Groceries")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateItem(ctx, "Milk", nil); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := s.CreateItems(ctx, []NewItem{{Title: " Eggs ", CategoryID: &c.ID}, {Title: "Bread"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0].Title != "Eggs" || got[0].CategoryID == nil || got[1].CategoryID != nil {
+		t.Errorf("CreateItems = %+v", got)
+	}
+	if got := titles(t, s); got != "Milk,Eggs,Bread" {
+		t.Errorf("list = %s, want the new items at the end in order", got)
+	}
+
+	for what, items := range map[string][]NewItem{
+		"unknown category": {{Title: "Nails"}, {Title: "Glue", CategoryID: ptr(int64(999))}},
+		"blank title":      {{Title: "Nails"}, {Title: " "}},
+		"no items":         nil,
+	} {
+		_, err := s.CreateItems(ctx, items)
+		if !errors.Is(err, ErrInvalid) {
+			t.Errorf("%s: err = %v, want ErrInvalid", what, err)
+			continue
+		}
+		if len(items) > 0 && !strings.HasPrefix(err.Error(), "item 2 of 2: ") {
+			t.Errorf("%s: err = %q, want it to name item 2 of 2", what, err)
+		}
+	}
+	if got := titles(t, s); got != "Milk,Eggs,Bread" {
+		t.Errorf("list after failed CreateItems = %s, want nothing added", got)
+	}
+}
+
+func TestDeleteItems(t *testing.T) {
+	ctx := context.Background()
+	s := openTest(t)
+	created, err := s.CreateItems(ctx, []NewItem{{Title: "a"}, {Title: "b"}, {Title: "c"}, {Title: "d"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, b, c := created[0].ID, created[1].ID, created[2].ID
+
+	got, err := s.DeleteItems(ctx, []int64{c, a, c})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0].ID != c || got[1].ID != a {
+		t.Errorf("DeleteItems = %+v, want c, a once each", got)
+	}
+	if got := titles(t, s); got != "b,d" {
+		t.Errorf("items = %q, want b,d", got)
+	}
+	deleted, err := s.ListDeletedItems(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(deleted) != 2 || !deleted[0].DeletedAt.Equal(deleted[1].DeletedAt) {
+		t.Errorf("deleted = %+v, want both deleted at the same time", deleted)
+	}
+
+	for what, ids := range map[string][]int64{
+		"unknown id":      {b, 999},
+		"already deleted": {b, a},
+	} {
+		if _, err := s.DeleteItems(ctx, ids); !errors.Is(err, ErrNotFound) {
+			t.Errorf("%s: err = %v, want ErrNotFound", what, err)
+		}
+	}
+	if _, err := s.DeleteItems(ctx, nil); !errors.Is(err, ErrInvalid) {
+		t.Errorf("no ids: err = %v, want ErrInvalid", err)
+	}
+	if got := titles(t, s); got != "b,d" {
+		t.Errorf("items after failed DeleteItems = %q, want nothing deleted", got)
+	}
+}
+
 func TestItemOrder(t *testing.T) {
 	ctx := context.Background()
 	s := openTest(t)
@@ -993,6 +1077,8 @@ func TestOnChangeFiresOncePerWrite(t *testing.T) {
 	expect("CreateItemWithKey", 1, err)
 	_, err = s.CreateItemWithKey(ctx(), "k", "Milk", nil)
 	expect("CreateItemWithKey replay", 0, err)
+	_, err = s.CreateItems(ctx(), []NewItem{{Title: "Eggs"}, {Title: "Bread"}})
+	expect("CreateItems", 1, err)
 	_, err = s.UpdateItem(ctx(), it.ID, ItemUpdate{Checked: ptr(true), SetBefore: true})
 	expect("UpdateItem", 1, err)
 	err = s.SavePreview(ctx(), "https://example.com/post", Preview{Title: "A post"})
@@ -1001,6 +1087,10 @@ func TestOnChangeFiresOncePerWrite(t *testing.T) {
 	expect("ListItems", 0, err)
 	_, err = s.DeleteItem(ctx(), it.ID)
 	expect("DeleteItem", 1, err)
+	eggs, err := s.CreateItem(ctx(), "Eggs", nil)
+	expect("CreateItem", 1, err)
+	_, err = s.DeleteItems(ctx(), []int64{eggs.ID})
+	expect("DeleteItems", 1, err)
 	_, err = s.ListDeletedItems(ctx())
 	expect("ListDeletedItems", 0, err)
 	_, err = s.RestoreItem(ctx(), it.ID)
@@ -1016,8 +1106,10 @@ func TestOnChangeFiresOncePerWrite(t *testing.T) {
 		"DeleteCategory":   func(ctx context.Context) error { _, err := s.DeleteCategory(ctx, c.ID); return err },
 		"SetCategoryOrder": func(ctx context.Context) error { _, err := s.SetCategoryOrder(ctx, nil); return err },
 		"CreateItem":       func(ctx context.Context) error { _, err := s.CreateItem(ctx, "", nil); return err },
+		"CreateItems":      func(ctx context.Context) error { _, err := s.CreateItems(ctx, []NewItem{{Title: "x"}, {}}); return err },
 		"UpdateItem":       func(ctx context.Context) error { _, err := s.UpdateItem(ctx, 999, ItemUpdate{}); return err },
 		"DeleteItem":       func(ctx context.Context) error { _, err := s.DeleteItem(ctx, 999); return err },
+		"DeleteItems":      func(ctx context.Context) error { _, err := s.DeleteItems(ctx, []int64{eggs.ID}); return err },
 		"RestoreItem":      func(ctx context.Context) error { _, err := s.RestoreItem(ctx, it.ID); return err },
 	} {
 		if err := fail(ctx()); err == nil {

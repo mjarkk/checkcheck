@@ -38,6 +38,11 @@ type itemIDArg struct {
 	ItemID int64 `json:"item_id" jsonschema:"id of the item"`
 }
 
+type newItemArg struct {
+	Title      string `json:"title" jsonschema:"item text, 1-500 characters"`
+	CategoryID *int64 `json:"category_id,omitempty" jsonschema:"category to file the item under"`
+}
+
 // Lists are wrapped in an object because clients on older protocol versions
 // require structuredContent to be one.
 type categoryList struct {
@@ -114,14 +119,17 @@ func addTools(srv *mcp.Server, st *store.Store) {
 	})
 
 	mcp.AddTool(srv, &mcp.Tool{
-		Name:        "add_item",
-		Description: "Add an unchecked item and return it. Omit category_id to leave it uncategorized.",
+		Name:        "add_items",
+		Description: "Add one or more unchecked items and return them, in the order given. Each item has its own optional category_id; omit it to leave that item uncategorized. Add everything the user asked for in one call. If any item is invalid, none are added.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in struct {
-		Title      string `json:"title" jsonschema:"item text, 1-500 characters"`
-		CategoryID *int64 `json:"category_id,omitempty" jsonschema:"category to file the item under"`
-	}) (*mcp.CallToolResult, store.Item, error) {
-		it, err := st.CreateItem(ctx, in.Title, in.CategoryID)
-		return nil, it, err
+		Items []newItemArg `json:"items" jsonschema:"the items to add, at least one"`
+	}) (*mcp.CallToolResult, itemList, error) {
+		items := make([]store.NewItem, len(in.Items))
+		for i, n := range in.Items {
+			items[i] = store.NewItem{Title: n.Title, CategoryID: n.CategoryID}
+		}
+		created, err := st.CreateItems(ctx, items)
+		return nil, itemList{created}, err
 	})
 
 	mcp.AddTool(srv, &mcp.Tool{
@@ -161,10 +169,12 @@ func addTools(srv *mcp.Server, st *store.Store) {
 	})
 
 	mcp.AddTool(srv, &mcp.Tool{
-		Name:        "delete_item",
-		Description: "Delete an item and return it. The user can restore it from Recently deleted in the app for 30 days. To mark an item done, use set_item_checked instead.",
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, in itemIDArg) (*mcp.CallToolResult, store.Item, error) {
-		it, err := st.DeleteItem(ctx, in.ItemID)
-		return nil, it, err
+		Name:        "delete_items",
+		Description: "Delete one or more items and return them, in the order given. The user can restore them from Recently deleted in the app for 30 days. Delete everything the user asked for in one call. If any id is unknown or already deleted, none are deleted. To mark items done, use set_item_checked instead.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in struct {
+		ItemIDs []int64 `json:"item_ids" jsonschema:"ids of the items to delete, at least one"`
+	}) (*mcp.CallToolResult, itemList, error) {
+		deleted, err := st.DeleteItems(ctx, in.ItemIDs)
+		return nil, itemList{deleted}, err
 	})
 }

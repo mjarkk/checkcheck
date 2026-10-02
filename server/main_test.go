@@ -199,9 +199,9 @@ func TestWritesThroughAPIAndMCPPublishChanged(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer cs.Close()
-	res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "add_item", Arguments: map[string]any{"title": "Eggs"}})
+	res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "add_items", Arguments: map[string]any{"items": []any{map[string]any{"title": "Eggs"}}}})
 	if err != nil || res.IsError {
-		t.Fatalf("add_item: %v, %+v", err, res)
+		t.Fatalf("add_items: %v, %+v", err, res)
 	}
 	if got, want := readEvent(t, conn), `{"type":"changed"}`; got != want {
 		t.Errorf("after an MCP write: got %s, want %s", got, want)

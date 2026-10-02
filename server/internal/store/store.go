@@ -160,8 +160,9 @@ func (s *Store) Close() error {
 }
 
 // OnMissingPreview sets f to be called with every link that an item returned
-// by ListItems, CreateItem or UpdateItem has no stored preview for, so it can
-// be fetched. f must not block. Call it before the store is used concurrently.
+// by ListItems, CreateItem, CreateItems or UpdateItem has no stored preview
+// for, so it can be fetched. f must not block. Call it before the store is
+// used concurrently.
 func (s *Store) OnMissingPreview(f func(link string)) {
 	s.onMissing = f
 }
@@ -584,7 +585,51 @@ func (s *Store) CreateItemWithKey(ctx context.Context, key, title string, catego
 		}
 		return s.withPreview(ctx, it)
 	}
-	title, err = cleanText("title", title, maxTitleLen)
+	it, err := insertItem(ctx, tx, title, categoryID)
+	if err != nil {
+		return Item{}, err
+	}
+	if err := rememberKey(ctx, tx, itemKey, key, it.ID); err != nil {
+		return Item{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return Item{}, err
+	}
+	s.changed(ctx)
+	return s.withPreview(ctx, it)
+}
+
+type NewItem struct {
+	Title      string
+	CategoryID *int64
+}
+
+// CreateItems creates all of items, in order, or none of them: an error names
+// the first item that failed by its 1-based position. Fails on an empty list.
+func (s *Store) CreateItems(ctx context.Context, items []NewItem) ([]Item, error) {
+	if len(items) == 0 {
+		return nil, fmt.Errorf("%w: items must not be empty", ErrInvalid)
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	created := make([]Item, len(items))
+	for i, n := range items {
+		if created[i], err = insertItem(ctx, tx, n.Title, n.CategoryID); err != nil {
+			return nil, fmt.Errorf("item %d of %d: %w", i+1, len(items), err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	s.changed(ctx)
+	return created, s.attachPreviews(ctx, created)
+}
+
+func insertItem(ctx context.Context, tx *sql.Tx, title string, categoryID *int64) (Item, error) {
+	title, err := cleanText("title", title, maxTitleLen)
 	if err != nil {
 		return Item{}, err
 	}
@@ -596,14 +641,7 @@ func (s *Store) CreateItemWithKey(ctx context.Context, key, title string, catego
 	if err != nil {
 		return Item{}, itemErr(err, 0, categoryID)
 	}
-	if err := rememberKey(ctx, tx, itemKey, key, it.ID); err != nil {
-		return Item{}, err
-	}
-	if err := tx.Commit(); err != nil {
-		return Item{}, err
-	}
-	s.changed(ctx)
-	return s.withPreview(ctx, it)
+	return it, nil
 }
 
 func (s *Store) UpdateItem(ctx context.Context, id int64, u ItemUpdate) (Item, error) {
@@ -667,13 +705,45 @@ func moveItem(ctx context.Context, tx *sql.Tx, id int64, beforeID *int64) error 
 // DeleteItem moves the item to Recently deleted, where only ListDeletedItems
 // and RestoreItem see it.
 func (s *Store) DeleteItem(ctx context.Context, id int64) (Item, error) {
-	it, err := scanItem(s.db.QueryRowContext(ctx,
-		"UPDATE items SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL RETURNING "+itemColumns, now(), id))
+	deleted, err := s.DeleteItems(ctx, []int64{id})
 	if err != nil {
-		return Item{}, itemErr(err, id, nil)
+		return Item{}, err
+	}
+	return deleted[0], nil
+}
+
+// DeleteItems is DeleteItem for all of ids, in order, or for none of them when
+// one is unknown or already deleted. A repeated id counts once. Fails on an
+// empty list.
+func (s *Store) DeleteItems(ctx context.Context, ids []int64) ([]Item, error) {
+	if len(ids) == 0 {
+		return nil, fmt.Errorf("%w: item ids must not be empty", ErrInvalid)
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	ts := now()
+	deleted := []Item{}
+	seen := map[int64]bool{}
+	for _, id := range ids {
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		it, err := scanItem(tx.QueryRowContext(ctx,
+			"UPDATE items SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL RETURNING "+itemColumns, ts, id))
+		if err != nil {
+			return nil, itemErr(err, id, nil)
+		}
+		deleted = append(deleted, it)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
 	}
 	s.changed(ctx)
-	return it, nil
+	return deleted, nil
 }
 
 // ListDeletedItems returns the items deleted within DeletedRetention, most

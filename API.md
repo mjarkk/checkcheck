@@ -117,7 +117,7 @@ Behind a reverse proxy, `/api/events` needs WebSocket upgrades passed through (n
 
 Streamable HTTP at exactly `/mcp` (no trailing slash), same bearer token. For clients that can't send headers, such as Claude's custom connectors (claude.ai, Claude Desktop and the Claude mobile app) or ChatGPT, the same server is also at `/mcp/<percent-encoded token>` with no `Authorization` header. A wrong token there is `401` too. The token then ends up in URLs (and so in logs), so the header form is preferred where a client supports it. `/api` only accepts the header, apart from the WebSocket's `auth` message. Tools:
 
-`list_categories`, `create_category`, `rename_category`, `delete_category`, `list_items` (in list order; optional `category_id` filter), `add_item`, `set_item_checked`, `rename_item`, `move_item` (omitted/null `category_id` = uncategorized), `delete_item` (into Recently deleted, like the REST call).
+`list_categories`, `create_category`, `rename_category`, `delete_category`, `list_items` (in list order; optional `category_id` filter), `add_items` (one or more items in one call, each with its own optional `category_id`, added in order at the end of the list; if one is invalid, none are added; sends one `changed`), `set_item_checked`, `rename_item`, `move_item` (omitted/null `category_id` = uncategorized), `delete_items` (one or more item ids in one call, into Recently deleted like the REST call; if one is unknown or already deleted, none are deleted; sends one `changed`).
 
 The webapp's **Connect AI** dialog (web only) gives these steps with the server URL and token filled in:
 
