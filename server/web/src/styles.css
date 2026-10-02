@@ -1182,7 +1182,9 @@ code {
 
 .new-category-drop {
   position: fixed;
-  left: max(1.5rem, env(safe-area-inset-left));
+  left: 0;
+  right: 0;
+  margin-inline: auto;
   bottom: max(1.5rem, env(safe-area-inset-bottom));
   /* Above the lifted row, which shrinks into it from behind. */
   z-index: 35;

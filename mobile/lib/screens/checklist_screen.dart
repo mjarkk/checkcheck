@@ -301,13 +301,17 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
           liftedBuilder: _buildLifted,
           foreground: _model.loaded
               ? Positioned(
-                  left: math.max(24, padding.left),
+                  left: 0,
+                  right: 0,
                   bottom: math.max(24, padding.bottom),
-                  child: NewCategoryDrop(
-                    key: newCategoryDrop,
-                    shown: spread || holding,
-                    over:
-                        holding || _drag.lifted?.target.zone == newCategoryZone,
+                  child: Center(
+                    child: NewCategoryDrop(
+                      key: newCategoryDrop,
+                      shown: spread || holding,
+                      over:
+                          holding ||
+                          _drag.lifted?.target.zone == newCategoryZone,
+                    ),
                   ),
                 )
               : null,
