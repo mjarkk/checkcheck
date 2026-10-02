@@ -10,7 +10,7 @@ Your personal checklist, on your own server. Groceries, packing lists, the thing
 ## Run it
 
 ```sh
-docker build -t checkcheck server
+docker build -t checkcheck https://github.com/mjarkk/checkcheck.git#main:server
 docker run -d --name checkcheck -p 8080:8080 -v checkcheck-data:/data \
   -e CHECKCHECK_TOKEN="$(openssl rand -hex 32)" checkcheck
 ```
