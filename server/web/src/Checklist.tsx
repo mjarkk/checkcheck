@@ -89,6 +89,7 @@ export function Checklist({ token, onSignOut, onUnauthorized }: Props) {
   const [managing, setManaging] = useState(false)
   const [connecting, setConnecting] = useState(false)
   const [connectingAssistant, setConnectingAssistant] = useState(false)
+  const [confirmingSignOut, setConfirmingSignOut] = useState(false)
   const [notice, setNotice] = useState<Notice | null>(null)
   const [parked, setParked] = useState<Parked | null>(null)
   const [pendingClear, setPendingClear] = useState<PendingClear | null>(null)
@@ -617,7 +618,7 @@ export function Checklist({ token, onSignOut, onUnauthorized }: Props) {
             icon={<SparkleIcon />}
             onClick={() => setConnectingAssistant(true)}
           />
-          <TopbarButton label="Sign out" icon={<LogoutIcon />} onClick={onSignOut} />
+          <TopbarButton label="Sign out" icon={<LogoutIcon />} onClick={() => setConfirmingSignOut(true)} />
         </div>
       </header>
 
@@ -731,6 +732,15 @@ export function Checklist({ token, onSignOut, onUnauthorized }: Props) {
 
       {connecting && <ConnectPhone onClose={() => setConnecting(false)} />}
       {connectingAssistant && <ConnectAssistant onClose={() => setConnectingAssistant(false)} />}
+      {confirmingSignOut && (
+        <ConfirmDialog
+          title="Sign out?"
+          message="You will need the token to sign in again."
+          confirmLabel="Sign out"
+          onConfirm={onSignOut}
+          onCancel={() => setConfirmingSignOut(false)}
+        />
+      )}
       {parked && (
         <NewCategoryDialog
           itemTitle={items?.find((i) => i.id === parked.id)?.title ?? ''}
