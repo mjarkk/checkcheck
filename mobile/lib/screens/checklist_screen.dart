@@ -816,7 +816,7 @@ class TopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // The icon buttons need the wordmark's room on the narrowest phones.
-    final wordmark = MediaQuery.sizeOf(context).width >= 340;
+    final wordmark = MediaQuery.sizeOf(context).width >= 352;
     return ConstrainedBox(
       constraints: const BoxConstraints(minHeight: 64),
       child: Row(
@@ -830,7 +830,7 @@ class TopBar extends StatelessWidget {
                 if (wordmark)
                   Flexible(
                     child: Text(
-                      'checkcheck',
+                      'CheckCheck',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.titleLarge,

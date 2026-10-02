@@ -92,7 +92,7 @@ void main() {
     expect(store.token, isNull);
   });
 
-  testWidgets('a non-checkcheck server is reported', (tester) async {
+  testWidgets('a non-CheckCheck server is reported', (tester) async {
     await pumpSetup(
       tester,
       MockClient((_) async => http.Response('<html></html>', 200)),
@@ -101,7 +101,7 @@ void main() {
     await connect(tester, 'example.com', 'dev');
 
     expect(
-      find.text("That doesn't look like a checkcheck server"),
+      find.text("That doesn't look like a CheckCheck server"),
       findsOneWidget,
     );
     expect(connected, isEmpty);

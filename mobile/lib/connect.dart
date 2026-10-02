@@ -56,7 +56,7 @@ class ConnectException implements Exception {
   String toString() => message;
 }
 
-/// Resolves to the settings to persist once [rawUrl] answers as a checkcheck
+/// Resolves to the settings to persist once [rawUrl] answers as a CheckCheck
 /// server and accepts [rawToken]. Throws a [ConnectException] with a
 /// user-facing message otherwise.
 Future<ServerSettings> verifyServer({
@@ -77,7 +77,7 @@ Future<ServerSettings> verifyServer({
   try {
     if (!await api.checkHealth()) {
       throw const ConnectException(
-        "That doesn't look like a checkcheck server",
+        "That doesn't look like a CheckCheck server",
       );
     }
     await api.listCategories();

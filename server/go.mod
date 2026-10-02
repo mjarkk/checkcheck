@@ -3,6 +3,7 @@ module checkcheck
 go 1.27
 
 require (
+	github.com/coder/websocket v1.8.15
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	golang.org/x/net v0.58.0
 	modernc.org/sqlite v1.60.1

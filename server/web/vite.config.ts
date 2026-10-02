@@ -12,7 +12,9 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     proxy: {
-      '/api': { target: apiUrl, changeOrigin: true },
+      // changeOrigin points the Host header at the target, so the socket's Origin has to follow it to pass a
+      // same-origin check. That opens no CSRF hole: the socket signs in with the token, not a cookie.
+      '/api': { target: apiUrl, changeOrigin: true, ws: true, rewriteWsOrigin: true },
       '/mcp': { target: apiUrl, changeOrigin: true },
     },
   },

@@ -1,16 +1,18 @@
 package api
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
+
+	"github.com/coder/websocket"
 
 	"checkcheck/internal/events"
 	"checkcheck/internal/store"
@@ -18,11 +20,21 @@ import (
 
 const (
 	maxBodyBytes = 1 << 20
-	pingInterval = 25 * time.Second
+	maxClientLen = 64
+	maxKeyLen    = 100
+
+	closeUnauthorized websocket.StatusCode = 4401
+)
+
+// Variables so tests can shorten them.
+var (
+	authTimeout  = 10 * time.Second
+	pingInterval = 15 * time.Second
+	writeTimeout = 10 * time.Second
 )
 
 func Handler(st *store.Store, hub *events.Hub, token string) http.Handler {
-	h := &handlers{st: st, hub: hub}
+	h := &handlers{st: st, hub: hub, token: []byte(token)}
 	authed := http.NewServeMux()
 	authed.HandleFunc("GET /api/categories", h.listCategories)
 	authed.HandleFunc("POST /api/categories", h.createCategory)
@@ -36,7 +48,6 @@ func Handler(st *store.Store, hub *events.Hub, token string) http.Handler {
 	authed.HandleFunc("DELETE /api/items/{id}", h.deleteItem)
 	authed.HandleFunc("GET /api/items/deleted", h.listDeletedItems)
 	authed.HandleFunc("POST /api/items/{id}/restore", h.restoreItem)
-	authed.HandleFunc("GET /api/events", h.events)
 	// Also catches known paths with an unsupported method, which therefore
 	// get 404 rather than ServeMux's plain-text 405.
 	authed.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
@@ -47,8 +58,27 @@ func Handler(st *store.Store, hub *events.Hub, token string) http.Handler {
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
-	mux.Handle("/api/", RequireToken(token, authed))
+	mux.HandleFunc("GET /api/events", h.events)
+	mux.Handle("/api/", RequireToken(token, withClient(authed)))
 	return mux
+}
+
+type clientKey struct{}
+
+// ClientID returns the X-Checkcheck-Client of the API request ctx belongs to,
+// or "" when there was none.
+func ClientID(ctx context.Context) string {
+	id, _ := ctx.Value(clientKey{}).(string)
+	return id
+}
+
+func withClient(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if id := r.Header.Get("X-Checkcheck-Client"); id != "" && utf8.RuneCountInString(id) <= maxClientLen {
+			r = r.WithContext(context.WithValue(r.Context(), clientKey{}, id))
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func RequireToken(token string, next http.Handler) http.Handler {
@@ -83,8 +113,9 @@ func unauthorized(w http.ResponseWriter) {
 }
 
 type handlers struct {
-	st  *store.Store
-	hub *events.Hub
+	st    *store.Store
+	hub   *events.Hub
+	token []byte
 }
 
 func (h *handlers) listCategories(w http.ResponseWriter, r *http.Request) {
@@ -97,11 +128,15 @@ type categoryRequest struct {
 }
 
 func (h *handlers) createCategory(w http.ResponseWriter, r *http.Request) {
+	key, ok := idempotencyKey(w, r)
+	if !ok {
+		return
+	}
 	var req categoryRequest
 	if !decode(w, r, &req) {
 		return
 	}
-	c, err := h.st.CreateCategory(r.Context(), req.Name)
+	c, err := h.st.CreateCategoryWithKey(r.Context(), key, req.Name)
 	respond(w, r, http.StatusCreated, c, err)
 }
 
@@ -151,6 +186,10 @@ func (h *handlers) listItems(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handlers) createItem(w http.ResponseWriter, r *http.Request) {
+	key, ok := idempotencyKey(w, r)
+	if !ok {
+		return
+	}
 	var req struct {
 		Title      string `json:"title"`
 		CategoryID *int64 `json:"category_id"`
@@ -158,8 +197,22 @@ func (h *handlers) createItem(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &req) {
 		return
 	}
-	it, err := h.st.CreateItem(r.Context(), req.Title, req.CategoryID)
+	it, err := h.st.CreateItemWithKey(r.Context(), key, req.Title, req.CategoryID)
 	respond(w, r, http.StatusCreated, it, err)
+}
+
+// idempotencyKey returns "" when the request has no Idempotency-Key, which a
+// present but empty one is not.
+func idempotencyKey(w http.ResponseWriter, r *http.Request) (string, bool) {
+	keys := r.Header.Values("Idempotency-Key")
+	if len(keys) == 0 {
+		return "", true
+	}
+	if n := utf8.RuneCountInString(keys[0]); len(keys) > 1 || n < 1 || n > maxKeyLen {
+		writeError(w, http.StatusBadRequest, "Idempotency-Key must be one header of 1 to 100 characters")
+		return "", false
+	}
+	return keys[0], true
 }
 
 func (h *handlers) updateItem(w http.ResponseWriter, r *http.Request) {
@@ -211,46 +264,84 @@ func (h *handlers) restoreItem(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handlers) events(w http.ResponseWriter, r *http.Request) {
+	// Any origin may connect: the socket signs in with the token in its first
+	// message, not with ambient credentials such as cookies, so a page on
+	// another origin gets nothing without the token. The Vite dev proxy also
+	// sends a different Origin.
+	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
+	if err != nil {
+		return
+	}
+	defer conn.CloseNow()
+	if !h.authenticate(r.Context(), conn) {
+		return
+	}
 	evs, unsubscribe := h.hub.Subscribe()
 	defer unsubscribe()
-	rc := http.NewResponseController(w)
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	// Stops nginx from buffering the stream.
-	w.Header().Set("X-Accel-Buffering", "no")
-	w.WriteHeader(http.StatusOK)
-	// The headers only go out with the first flush.
-	_, err := io.WriteString(w, ": connected\n\n")
+	// Cancelled once the socket closes, also when the client sends a data
+	// message, which CloseRead answers with 1008.
+	ctx := conn.CloseRead(r.Context())
 	ping := time.NewTicker(pingInterval)
 	defer ping.Stop()
+	e := events.Event{Type: "ready"}
 	for {
-		if err == nil {
-			err = rc.Flush()
-		}
-		if err != nil {
+		if err := send(ctx, conn, e); err != nil {
 			return
 		}
 		select {
-		case <-r.Context().Done():
+		case <-ctx.Done():
 			return
 		case <-ping.C:
-			_, err = io.WriteString(w, ": ping\n\n")
-		case e, ok := <-evs:
+			e = events.Event{Type: "ping"}
+		case next, ok := <-evs:
 			if !ok {
+				if h.hub.Closed() {
+					conn.Close(websocket.StatusGoingAway, "server shutting down")
+				} else {
+					conn.Close(websocket.StatusTryAgainLater, "fell behind")
+				}
 				return
 			}
-			err = writeEvent(w, e)
+			e = next
 		}
 	}
 }
 
-func writeEvent(w io.Writer, e events.Event) error {
-	data, err := json.Marshal(e.Data)
+// authenticate reads the auth message, and closes conn unless it carries the
+// token.
+func (h *handlers) authenticate(ctx context.Context, conn *websocket.Conn) bool {
+	// Not a deadline on ctx: a Read whose ctx expires drops the connection
+	// without a close frame.
+	late := time.AfterFunc(authTimeout, func() {
+		conn.Close(websocket.StatusPolicyViolation, "no auth message in time")
+	})
+	typ, msg, err := conn.Read(ctx)
+	if !late.Stop() || err != nil {
+		return false
+	}
+	var auth struct {
+		Type  string  `json:"type"`
+		Token *string `json:"token"`
+	}
+	if typ != websocket.MessageText || json.Unmarshal(msg, &auth) != nil || auth.Type != "auth" || auth.Token == nil {
+		conn.Close(websocket.StatusPolicyViolation, "first message must be auth")
+		return false
+	}
+	if subtle.ConstantTimeCompare([]byte(*auth.Token), h.token) != 1 {
+		conn.Close(closeUnauthorized, "invalid token")
+		return false
+	}
+	return true
+}
+
+func send(ctx context.Context, conn *websocket.Conn, e events.Event) error {
+	b, err := json.Marshal(e)
 	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", e.Name, data)
-	return err
+	ctx, cancel := context.WithTimeout(ctx, writeTimeout)
+	defer cancel()
+	return conn.Write(ctx, websocket.MessageText, b)
 }
 
 // optional tells an omitted field (Set false) from an explicit null. Declare

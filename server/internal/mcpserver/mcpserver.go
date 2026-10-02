@@ -11,11 +11,11 @@ import (
 	"checkcheck/internal/store"
 )
 
-const instructions = `checkcheck is the user's personal checklist: items with a title that can be checked off, each optionally filed under one category.
+const instructions = `CheckCheck is the user's personal checklist: items with a title that can be checked off, each optionally filed under one category.
 Items and categories are referred to by numeric id. Call list_categories to map category names to ids and list_items to find item ids before changing anything.`
 
 func Handler(st *store.Store) http.Handler {
-	srv := mcp.NewServer(&mcp.Implementation{Name: "checkcheck", Version: "1.0.0"}, &mcp.ServerOptions{
+	srv := mcp.NewServer(&mcp.Implementation{Name: "checkcheck", Title: "CheckCheck", Version: "1.0.0"}, &mcp.ServerOptions{
 		Instructions: instructions,
 	})
 	addTools(srv, st)

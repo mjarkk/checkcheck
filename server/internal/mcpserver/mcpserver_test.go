@@ -208,3 +208,53 @@ func TestItemsCarryLinkPreviews(t *testing.T) {
 		t.Errorf("list_items = %+v, error %v", all, res.IsError)
 	}
 }
+
+func TestEachWriteToolReportsOneChange(t *testing.T) {
+	ctx := context.Background()
+	st, url := setup(t)
+	changes := make(chan string, 16)
+	st.OnChange(func(ctx context.Context) { changes <- api.ClientID(ctx) })
+	cs, err := connect(ctx, url, "secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cs.Close()
+	expect := func(tool string, want int) {
+		t.Helper()
+		got := 0
+		for len(changes) > 0 {
+			if client := <-changes; client != "" {
+				t.Errorf("%s: change from client %q, want none", tool, client)
+			}
+			got++
+		}
+		if got != want {
+			t.Errorf("%s: %d changes, want %d", tool, got, want)
+		}
+	}
+
+	cat, _ := call[store.Category](t, cs, "create_category", map[string]any{"name": "a"})
+	expect("create_category", 1)
+	item, _ := call[store.Item](t, cs, "add_item", map[string]any{"title": "x"})
+	expect("add_item", 1)
+	for _, tc := range []struct {
+		tool string
+		args map[string]any
+	}{
+		{"rename_category", map[string]any{"category_id": cat.ID, "name": "b"}},
+		{"set_item_checked", map[string]any{"item_id": item.ID, "checked": true}},
+		{"rename_item", map[string]any{"item_id": item.ID, "title": "y"}},
+		{"move_item", map[string]any{"item_id": item.ID, "category_id": cat.ID}},
+		{"delete_item", map[string]any{"item_id": item.ID}},
+		{"delete_category", map[string]any{"category_id": cat.ID}},
+	} {
+		if _, res := call[map[string]any](t, cs, tc.tool, tc.args); res.IsError {
+			t.Fatalf("%s: tool error %+v", tc.tool, res.Content)
+		}
+		expect(tc.tool, 1)
+	}
+	call[categoryList](t, cs, "list_categories", nil)
+	call[itemList](t, cs, "list_items", map[string]any{})
+	call[store.Item](t, cs, "delete_item", map[string]any{"item_id": item.ID})
+	expect("reads and a failed delete_item", 0)
+}

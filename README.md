@@ -1,8 +1,8 @@
-# checkcheck
+# CheckCheck
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshot-dark.png">
-  <img src="docs/screenshot-light.png" alt="checkcheck in a browser and on an iPhone">
+  <img src="docs/screenshot-light.png" alt="CheckCheck in a browser and on an iPhone">
 </picture>
 
 Your personal checklist, on your own server. Groceries, packing lists, the things you keep meaning to do. One Go binary serves the web app, the API the iPhone app talks to, and an MCP server, so you can ask Claude to add oat milk and find it on your phone at the store.
@@ -22,8 +22,6 @@ Open http://localhost:8080 and paste the token. Leave out `CHECKCHECK_TOKEN` and
 | `CHECKCHECK_TOKEN`    | generated                  | The only login there is      |
 | `CHECKCHECK_DATA_DIR` | `data` (`/data` in Docker) | Database and generated token |
 | `CHECKCHECK_ADDR`     | `:8080`                    | Listen address               |
-
-The token is a bearer token, so put the server behind HTTPS before it leaves your network. Link previews need outbound HTTP(S); the server never fetches private or loopback addresses.
 
 ## Connect
 

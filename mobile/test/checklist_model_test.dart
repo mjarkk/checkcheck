@@ -23,7 +23,12 @@ void main() {
     String token = 'dev',
   }) async {
     final opened = await ChecklistModel.open(
-      api: ApiClient(baseUrl: baseUrl, token: token, httpClient: server.client),
+      api: ApiClient(
+        baseUrl: baseUrl,
+        token: token,
+        httpClient: server.client,
+        connectWebSocket: server.connect,
+      ),
       cache: cache,
       onUnauthorized: () => unauthorizedCalls++,
     );
@@ -362,6 +367,127 @@ void main() {
     expect(server.items.single['title'], 'milk');
     expect(server.items.single['category_id'], isNull);
     expect(model.items.single.categoryId, isNull);
+  });
+
+  group('idempotency keys', () {
+    List<String?> postedKeys() => [
+      for (final request in server.requests)
+        if (request.method == 'POST') request.headers['Idempotency-Key'],
+    ];
+
+    test('every create gets its own, which the saved list keeps and a '
+        'reopened model sends', () async {
+      await model.refresh();
+      server.offline = true;
+
+      final work = model.addCategory('Work');
+      model.addItem('report', categoryId: work);
+      model.addItems(['milk', 'eggs']);
+      await pumpEventQueue();
+      final saved = jsonDecode(cache.data!) as Map<String, dynamic>;
+      final keys = [
+        for (final change in saved['pending'] as List) (change as Map)['key'],
+      ];
+      close(model);
+      final reopened = await open();
+      server.offline = false;
+      await reopened.refresh();
+
+      expect(keys, hasLength(4));
+      expect(keys, everyElement(matches(RegExp(r'^[0-9a-f]{32}$'))));
+      expect(keys.toSet(), hasLength(4));
+      expect(postedKeys(), keys);
+      expect(serverTitles(), ['report', 'milk', 'eggs']);
+    });
+
+    test('a create saved before keys existed is sent without one', () async {
+      const at = '2026-10-01T12:00:00.000Z';
+      cache.data = jsonEncode({
+        'version': 2,
+        'server': 'http://localhost:8081',
+        'snapshot': {'categories': [], 'items': []},
+        'pending': [
+          {
+            'type': 'create_item',
+            'id': -1,
+            'title': 'milk',
+            'category_id': null,
+            'created_at': at,
+          },
+          {
+            'type': 'create_category',
+            'id': -2,
+            'name': 'Work',
+            'created_at': at,
+          },
+        ],
+        'next_temp_id': -3,
+      });
+
+      final reopened = await open();
+      expect(titles(reopened), ['milk']);
+      await reopened.refresh();
+
+      expect(serverTitles(), ['milk']);
+      expect(server.categories.single['name'], 'Work');
+      expect(postedKeys(), [null, null]);
+    });
+
+    test('a create whose response was lost is not made twice', () async {
+      await model.refresh();
+      server.loseNextResponse = true;
+
+      model.addItem('milk');
+      await pumpEventQueue();
+      expect(serverTitles(), ['milk']);
+      await model.refresh();
+
+      final keys = postedKeys();
+      expect(keys, hasLength(2));
+      expect(keys.first, isNotNull);
+      expect(keys.last, keys.first);
+      expect(serverTitles(), ['milk']);
+      expect(titles(), ['milk']);
+    });
+
+    test('a create retried without its deleted category keeps its '
+        'key', () async {
+      final groceries = server.addCategory('Groceries');
+      await model.refresh();
+      server.offline = true;
+
+      model.addItem('milk', categoryId: groceries['id'] as int);
+      server.categories.clear();
+      server.offline = false;
+      await model.refresh();
+
+      final keys = postedKeys();
+      expect(keys, hasLength(2));
+      expect(keys.first, isNotNull);
+      expect(keys.last, keys.first);
+      expect(serverTitles(), ['milk']);
+    });
+
+    test('a resent create of an item deleted elsewhere meanwhile is dropped '
+        'quietly, with the changes waiting for it', () async {
+      await model.refresh();
+      final failures = failuresOf(model);
+      server.loseNextResponse = true;
+
+      final milk = model.addItem('milk');
+      model.renameItem(milk, 'oat milk');
+      await pumpEventQueue();
+      server.items.clear();
+      await model.refresh();
+
+      expect(sent(), [
+        'POST /api/items {"title":"milk","category_id":null}',
+        'POST /api/items {"title":"milk","category_id":null}',
+      ]);
+      expect(failures, isEmpty);
+      expect(model.items, isEmpty);
+      expect(model.itemById(milk), isNull);
+    });
   });
 
   test('deleting a category uncategorizes its items at once', () async {
@@ -867,11 +993,11 @@ void main() {
     test('events bring previews, which are saved', () async {
       server.addItem('Read $_link');
       await model.refresh();
-      var notified = 0;
-      model.addListener(() => notified++);
       model.followEvents();
       await pumpEventQueue();
       expect(server.eventClients, 1);
+      var notified = 0;
+      model.addListener(() => notified++);
 
       server.pushPreview(_link, previewJson);
       await pumpEventQueue();
@@ -889,13 +1015,13 @@ void main() {
   });
 
   group('events', () {
-    test('following twice keeps one stream; stopping closes it', () async {
+    test('following twice keeps one socket; stopping closes it', () async {
       model.followEvents();
       model.followEvents();
       await pumpEventQueue();
 
       expect(server.eventClients, 1);
-      expect(requestsTo('/api/events'), 1);
+      expect(server.eventConnects, 1);
 
       model.stopEvents();
       await pumpEventQueue();
@@ -906,7 +1032,7 @@ void main() {
       expect(server.eventClients, 1);
     });
 
-    test('dispose closes the stream', () async {
+    test('dispose closes the socket', () async {
       model.followEvents();
       await pumpEventQueue();
 
@@ -916,16 +1042,16 @@ void main() {
       expect(server.eventClients, 0);
     });
 
-    testWidgets('a reconnect refreshes, since events are not replayed', (
-      tester,
-    ) async {
+    testWidgets('every ready refreshes, the first one too, since events are '
+        'not replayed', (tester) async {
       final model = await open();
       server.addItem('milk');
-      await model.refresh();
       model.followEvents();
       await tester.pump();
+
       expect(server.eventClients, 1);
       expect(requestsTo('/api/items'), 1);
+      expect(titles(model), ['milk']);
 
       server.addItem('eggs');
       server.closeEvents();
@@ -937,34 +1063,77 @@ void main() {
       close(model);
     });
 
-    testWidgets('a 401 calls onUnauthorized and stops', (tester) async {
+    testWidgets('a change made elsewhere refreshes once no changed event has '
+        'come for 300 ms', (tester) async {
+      final model = await open();
+      model.followEvents();
+      await tester.pump();
+      expect(requestsTo('/api/items'), 1);
+
+      server.addItem('milk');
+      for (var i = 0; i < 3; i++) {
+        server.sendEvent({'type': 'changed'});
+        await tester.pump(const Duration(milliseconds: 200));
+      }
+      await tester.pump(const Duration(milliseconds: 99));
+      expect(requestsTo('/api/items'), 1);
+      await tester.pump(const Duration(milliseconds: 1));
+
+      expect(requestsTo('/api/items'), 2);
+      expect(titles(model), ['milk']);
+      close(model);
+    });
+
+    testWidgets('a write refreshes the other clients, not the one that made '
+        'it', (tester) async {
+      server.addItem('milk');
+      final model = await open();
+      final other = await open();
+      model.followEvents();
+      other.followEvents();
+      await tester.pump();
+      final fetches = requestsTo('/api/items');
+
+      model.setChecked([model.items.single.id], true);
+      await tester.pump(const Duration(seconds: 1));
+
+      expect(server.items.single['checked'], isTrue);
+      expect(requestsTo('/api/items'), fetches + 1);
+      expect(other.items.single.checked, isTrue);
+      close(model);
+      close(other);
+    });
+
+    testWidgets('a rejected token calls onUnauthorized and stops', (
+      tester,
+    ) async {
       final model = await open(token: 'stale');
 
       model.followEvents();
       await tester.pump(const Duration(minutes: 1));
 
       expect(unauthorizedCalls, 1);
-      expect(requestsTo('/api/events'), 1);
+      expect(server.eventConnects, 1);
       close(model);
     });
 
-    testWidgets('reconnects after 1s, doubling to 30s, until a connect '
-        'resets it', (tester) async {
+    testWidgets('reconnects after 1s, doubling to 30s, until a ready resets '
+        'it', (tester) async {
       final model = await open();
-      server.failEventsWith = 503;
+      server.refuseEvents = true;
 
       model.followEvents();
       await tester.pump();
-      expect(requestsTo('/api/events'), 1);
+      expect(server.eventConnects, 1);
       var attempts = 1;
       for (final seconds in [1, 2, 4, 8, 16, 30, 30]) {
         await tester.pump(Duration(seconds: seconds, milliseconds: -1));
-        expect(requestsTo('/api/events'), attempts);
+        expect(server.eventConnects, attempts);
         await tester.pump(const Duration(milliseconds: 1));
-        expect(requestsTo('/api/events'), ++attempts);
+        expect(server.eventConnects, ++attempts);
       }
 
-      server.failEventsWith = null;
+      server.refuseEvents = false;
       await tester.pump(const Duration(seconds: 30));
       expect(server.eventClients, 1);
       server.closeEvents();
@@ -972,6 +1141,26 @@ void main() {
 
       expect(server.eventClients, 1);
       expect(unauthorizedCalls, 0);
+      close(model);
+    });
+
+    testWidgets('a ping keeps the socket open; 40 s of silence closes it and '
+        'reconnects', (tester) async {
+      final model = await open();
+      model.followEvents();
+      await tester.pump();
+
+      await tester.pump(const Duration(seconds: 30));
+      server.sendEvent({'type': 'ping'});
+      await tester.pump(const Duration(seconds: 39));
+      expect(server.eventClients, 1);
+      expect(server.eventConnects, 1);
+      await tester.pump(const Duration(seconds: 1));
+      expect(server.eventClients, 0);
+      await tester.pump(const Duration(seconds: 1));
+
+      expect(server.eventConnects, 2);
+      expect(server.eventClients, 1);
       close(model);
     });
   });

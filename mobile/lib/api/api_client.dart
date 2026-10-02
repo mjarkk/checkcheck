@@ -1,12 +1,47 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:http/http.dart' as http;
+import 'package:web_socket_channel/web_socket_channel.dart';
 
 import 'models.dart';
 
-/// A link preview the server found, from `GET /api/events`.
-typedef PreviewEvent = ({String link, Preview preview});
+final _random = Random.secure();
+
+/// 128 random bits in hex, for an `Idempotency-Key` or a client id.
+String randomKey() => [
+  for (var i = 0; i < 16; i++)
+    _random.nextInt(256).toRadixString(16).padLeft(2, '0'),
+].join();
+
+/// What [ApiClient.events] passes on from `GET /api/events` (/API.md "Live
+/// updates"). Pings only keep the connection alive and aren't passed on.
+sealed class ServerEvent {
+  const ServerEvent();
+}
+
+/// Subscribed: every event from now on arrives, but nothing from before.
+final class ReadyEvent extends ServerEvent {
+  const ReadyEvent();
+}
+
+/// Something a list endpoint returns was changed by another client or MCP;
+/// the event says no more than that.
+final class ChangedEvent extends ServerEvent {
+  const ChangedEvent();
+}
+
+/// A link preview the server found.
+final class PreviewEvent extends ServerEvent {
+  const PreviewEvent({required this.link, required this.preview});
+
+  final String link;
+  final Preview preview;
+}
+
+/// Opens a WebSocket; [WebSocketChannel.connect] outside tests.
+typedef WebSocketConnect = WebSocketChannel Function(Uri url);
 
 sealed class ApiException implements Exception {
   const ApiException(this.message);
@@ -37,7 +72,7 @@ final class ServerException extends ApiException {
 
   final int statusCode;
 
-  /// Whether checkcheck itself answered with its `{"error"}` JSON, rather
+  /// Whether CheckCheck itself answered with its `{"error"}` JSON, rather
   /// than, say, a proxy standing in for a server that is down.
   final bool fromApi;
 }
@@ -52,15 +87,23 @@ class ApiClient {
     required this.token,
     required http.Client httpClient,
     this.timeout = const Duration(seconds: 10),
-  }) : _http = httpClient;
+    WebSocketConnect? connectWebSocket,
+  }) : _http = httpClient,
+       _connectWebSocket = connectWebSocket ?? WebSocketChannel.connect;
 
   /// Normalised: scheme included, no trailing slash.
   final String baseUrl;
   final String token;
   final Duration timeout;
-  final http.Client _http;
 
-  /// False when something answered but isn't a checkcheck server; throws
+  /// Sent as `X-Checkcheck-Client`, so this client can skip the `changed`
+  /// events its own requests caused.
+  final String clientId = randomKey();
+
+  final http.Client _http;
+  final WebSocketConnect _connectWebSocket;
+
+  /// False when something answered but isn't a CheckCheck server; throws
   /// [NetworkException] when nothing answered.
   Future<bool> checkHealth() async {
     final response = await _send('GET', '/api/health', authorized: false);
@@ -78,8 +121,15 @@ class ApiClient {
   Future<List<Category>> listCategories() async =>
       _parseList(await _request('GET', '/api/categories'), Category.fromJson);
 
-  Future<Category> createCategory(String name) async => _parse(
-    await _request('POST', '/api/categories', body: {'name': name}),
+  /// [key] is the create's `Idempotency-Key`, so resending it can't make a
+  /// second one.
+  Future<Category> createCategory(String name, {String? key}) async => _parse(
+    await _request(
+      'POST',
+      '/api/categories',
+      body: {'name': name},
+      idempotencyKey: key,
+    ),
     Category.fromJson,
   );
 
@@ -104,14 +154,18 @@ class ApiClient {
   Future<List<Item>> listItems() async =>
       _parseList(await _request('GET', '/api/items'), Item.fromJson);
 
-  Future<Item> createItem(String title, {int? categoryId}) async => _parse(
-    await _request(
-      'POST',
-      '/api/items',
-      body: {'title': title, 'category_id': categoryId},
-    ),
-    Item.fromJson,
-  );
+  /// [key] is the create's `Idempotency-Key`, so resending it can't make a
+  /// second one.
+  Future<Item> createItem(String title, {int? categoryId, String? key}) async =>
+      _parse(
+        await _request(
+          'POST',
+          '/api/items',
+          body: {'title': title, 'category_id': categoryId},
+          idempotencyKey: key,
+        ),
+        Item.fromJson,
+      );
 
   /// Sends only the fields given; `category: (id: null)` removes the
   /// category, `before: (id: null)` moves the item to the end of the list
@@ -148,77 +202,119 @@ class ApiClient {
   Future<Item> restoreItem(int id) async =>
       _parse(await _request('POST', '/api/items/$id/restore'), Item.fromJson);
 
-  /// Opens the server's event stream (/API.md "Link previews") and completes
-  /// once the server has accepted it, within [timeout]. The stream then has
-  /// no timeout: it ends, or fails with a [NetworkException], when the
-  /// connection does. Cancelling it, or completing [abort], closes the
-  /// connection.
-  Future<Stream<PreviewEvent>> events({Future<void>? abort}) async {
-    final closed = Completer<void>();
-    final request = http.AbortableRequest(
-      'GET',
-      Uri.parse('$baseUrl/api/events'),
-      abortTrigger: abort == null
-          ? closed.future
-          : Future.any([closed.future, abort]),
-    );
-    _authorize(request, accept: 'text/event-stream');
-    final http.StreamedResponse response;
-    try {
-      response = await _transfer(() => _http.send(request));
-    } on NetworkException {
-      closed.complete();
-      rethrow;
+  /// Follows the server's live updates (/API.md "Live updates"): listening
+  /// opens the WebSocket and signs in, cancelling closes it. Opening has
+  /// [timeout]. The stream ends with an error: [UnauthorizedException] when
+  /// the server rejects the token, otherwise [NetworkException], also after
+  /// 40 s without a message (the server pings every 15 s). `changed` events
+  /// that this client's own requests caused are left out, as it already has
+  /// their responses.
+  Stream<ServerEvent> events() {
+    late final StreamController<ServerEvent> events;
+    WebSocketChannel? socket;
+    StreamSubscription<Object?>? messages;
+
+    // Opening's timeout, then the silence one.
+    Timer? deadline;
+
+    void end([ApiException? error]) {
+      if (events.isClosed) return;
+      deadline?.cancel();
+      messages?.cancel();
+      socket?.sink.close().ignore();
+      if (error != null) events.addError(error);
+      events.close().ignore();
     }
-    if (!_ok(response.statusCode)) {
-      closed.complete();
-      _throwFor(await _transfer(() => http.Response.fromStream(response)));
+
+    void heard() {
+      deadline?.cancel();
+      deadline = Timer(
+        const Duration(seconds: 40),
+        () => end(const NetworkException('The server stopped answering')),
+      );
     }
-    return _readEvents(response.stream, closed);
+
+    Future<void> open() async {
+      deadline = Timer(
+        timeout,
+        () =>
+            end(const NetworkException('The server took too long to respond')),
+      );
+      final WebSocketChannel channel;
+      try {
+        channel = socket = _connectWebSocket(_eventsUrl());
+        await channel.ready;
+      } on Exception {
+        end(const NetworkException("Can't reach the server"));
+        return;
+      }
+      if (events.isClosed) return;
+      heard();
+      messages = channel.stream.listen(
+        (message) {
+          heard();
+          if (_event(message) case final event?) events.add(event);
+        },
+        onError: (Object _) =>
+            end(const NetworkException('Lost the connection to the server')),
+        onDone: () => end(
+          channel.closeCode == 4401
+              ? const UnauthorizedException('Token rejected')
+              : const NetworkException('Lost the connection to the server'),
+        ),
+      );
+      channel.sink.add(
+        jsonEncode({'type': 'auth', 'token': token, 'client': clientId}),
+      );
+    }
+
+    events = StreamController(onListen: open, onCancel: end);
+    return events.stream;
   }
 
-  // Plain transforms: an async* generator only sees a cancel at its next
-  // yield (a quiet stream would stay open), and a controller in between
-  // delivered the body's done event late, so the model never reconnected.
-  Stream<PreviewEvent> _readEvents(
-    Stream<List<int>> body,
-    Completer<void> closed,
-  ) {
-    void close() {
-      if (!closed.isCompleted) closed.complete();
-    }
+  Uri _eventsUrl() {
+    final url = Uri.parse('$baseUrl/api/events');
+    return url.replace(scheme: url.scheme == 'https' ? 'wss' : 'ws');
+  }
 
-    final parser = _EventParser();
-    return body
-        .transform(utf8.decoder)
-        .transform(const LineSplitter())
-        .transform(
-          StreamTransformer<String, PreviewEvent>.fromHandlers(
-            handleData: (line, sink) {
-              if (parser.add(line) case final event?) sink.add(event);
-            },
-            handleError: (_, _, sink) {
-              close();
-              sink
-                ..addError(
-                  const NetworkException('Lost the connection to the server'),
-                )
-                ..close();
-            },
-            handleDone: (sink) {
-              close();
-              sink.close();
-            },
-          ),
-        );
+  /// Null for pings, for what this client doesn't know, and for its own
+  /// changes.
+  ServerEvent? _event(Object? message) {
+    if (message is! String) return null;
+    try {
+      return switch (jsonDecode(message)) {
+        {'type': 'ready'} => const ReadyEvent(),
+        {'type': 'changed', 'client': final String client}
+            when client == clientId =>
+          null,
+        {'type': 'changed'} => const ChangedEvent(),
+        {
+          'type': 'preview',
+          'link': final String link,
+          'preview': final Map<String, dynamic> preview,
+        } =>
+          PreviewEvent(link: link, preview: Preview.fromJson(preview)),
+        _ => null,
+      };
+    } on FormatException {
+      return null;
+    } on TypeError {
+      return null;
+    }
   }
 
   Future<http.Response> _request(
     String method,
     String path, {
     Object? body,
+    String? idempotencyKey,
   }) async {
-    final response = await _send(method, path, body: body);
+    final response = await _send(
+      method,
+      path,
+      body: body,
+      idempotencyKey: idempotencyKey,
+    );
     if (!_ok(response.statusCode)) _throwFor(response);
     return response;
   }
@@ -241,26 +337,20 @@ class ApiClient {
     String path, {
     Object? body,
     bool authorized = true,
+    String? idempotencyKey,
   }) {
     final request = http.Request(method, Uri.parse('$baseUrl$path'));
-    if (authorized) {
-      _authorize(request);
-    } else {
-      request.headers['Accept'] = 'application/json';
+    request.headers['Accept'] = 'application/json';
+    request.headers['X-Checkcheck-Client'] = clientId;
+    if (authorized) request.headers['Authorization'] = 'Bearer $token';
+    if (idempotencyKey != null) {
+      request.headers['Idempotency-Key'] = idempotencyKey;
     }
     if (body != null) {
       request.headers['Content-Type'] = 'application/json';
       request.body = jsonEncode(body);
     }
     return _transfer(() => _http.send(request).then(http.Response.fromStream));
-  }
-
-  void _authorize(
-    http.BaseRequest request, {
-    String accept = 'application/json',
-  }) {
-    request.headers['Accept'] = accept;
-    request.headers['Authorization'] = 'Bearer $token';
   }
 
   Future<T> _transfer<T>(Future<T> Function() transfer) async {
@@ -284,7 +374,7 @@ class ApiClient {
     try {
       if (_decode(response) case {'error': final String error}) return error;
     } on FormatException {
-      // Fall through: proxies and non-checkcheck servers answer with HTML.
+      // Fall through: proxies and non-CheckCheck servers answer with HTML.
     }
     return null;
   }
@@ -335,50 +425,4 @@ class ApiClient {
     response.statusCode,
     'Unexpected response from the server',
   );
-}
-
-/// Server-Sent Events, `event:` and `data:` fields only.
-class _EventParser {
-  var _type = '';
-  final _data = <String>[];
-
-  /// The preview event that [line] completes, if any.
-  PreviewEvent? add(String line) {
-    if (line.isEmpty) {
-      final event = _type == 'preview' && _data.isNotEmpty
-          ? _previewEvent(_data.join('\n'))
-          : null;
-      _type = '';
-      _data.clear();
-      return event;
-    }
-    if (line.startsWith(':')) return null;
-    final colon = line.indexOf(':');
-    final field = colon < 0 ? line : line.substring(0, colon);
-    var value = colon < 0 ? '' : line.substring(colon + 1);
-    if (value.startsWith(' ')) value = value.substring(1);
-    switch (field) {
-      case 'event':
-        _type = value;
-      case 'data':
-        _data.add(value);
-    }
-    return null;
-  }
-
-  static PreviewEvent? _previewEvent(String data) {
-    try {
-      if (jsonDecode(data) case {
-        'link': final String link,
-        'preview': final Map<String, dynamic> preview,
-      }) {
-        return (link: link, preview: Preview.fromJson(preview));
-      }
-    } on FormatException {
-      // Skipped like any event this client doesn't know.
-    } on TypeError {
-      // Likewise.
-    }
-    return null;
-  }
 }

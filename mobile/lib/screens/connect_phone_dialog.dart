@@ -91,7 +91,7 @@ class _ConnectPhoneDialogState extends State<_ConnectPhoneDialog> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Text(
-                      'Scan this code with the checkcheck app on another '
+                      'Scan this code with the CheckCheck app on another '
                       'phone.',
                       style: theme.dialogTheme.contentTextStyle,
                     ),

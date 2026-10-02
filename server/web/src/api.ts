@@ -63,27 +63,33 @@ export class NetworkError extends Error {
 // What a proxy in front of the server answers while the server is down; Vite's dev proxy sends 502.
 const GATEWAY_STATUSES = new Set([502, 503, 504])
 
+/** Made once per page load; the server names it in the `changed` events of this page's own writes. */
+export const CLIENT_ID = Array.from(
+  // Not crypto.randomUUID(): that only exists in secure contexts, and the server is often plain http on the LAN.
+  crypto.getRandomValues(new Uint8Array(16)),
+  (b) => b.toString(16).padStart(2, '0'),
+).join('')
+
 export type Api = ReturnType<typeof createApi>
 
 /** Every call rejects with NetworkError when the server is unreachable and ApiError on any other non-2xx. */
 export function createApi(token: string) {
-  async function send(method: string, path: string, { body, accept = 'application/json', signal }: SendOptions = {}) {
-    const headers: Record<string, string> = { Authorization: `Bearer ${token}`, Accept: accept }
+  async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/json',
+      'X-Checkcheck-Client': CLIENT_ID,
+    }
     if (body !== undefined) headers['Content-Type'] = 'application/json'
 
     let res: Response
     try {
-      res = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), signal })
+      res = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) })
     } catch {
       throw new NetworkError()
     }
     if (GATEWAY_STATUSES.has(res.status)) throw new NetworkError()
     if (!res.ok) throw new ApiError(res.status, await readError(res))
-    return res
-  }
-
-  async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-    const res = await send(method, path, { body })
     if (res.status === 204) return undefined as T
     return (await res.json()) as T
   }
@@ -105,13 +111,16 @@ export function createApi(token: string) {
     listDeletedItems: () => request<DeletedItem[]>('GET', '/api/items/deleted'),
     /** Back into Uncategorized, at the end of the list order. */
     restoreItem: (id: number) => request<Item>('POST', `/api/items/${id}/restore`),
-    /** The open Server-Sent Events stream; aborting `signal` closes it. */
-    events: (signal: AbortSignal) =>
-      send('GET', '/api/events', { accept: 'text/event-stream', signal }).then((res) => res.body!),
+    /** A new live updates socket, which signs in as soon as it opens. */
+    events: () => {
+      const url = new URL('/api/events', location.href)
+      url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+      const socket = new WebSocket(url)
+      socket.onopen = () => socket.send(JSON.stringify({ type: 'auth', token, client: CLIENT_ID }))
+      return socket
+    },
   }
 }
-
-type SendOptions = { body?: unknown; accept?: string; signal?: AbortSignal }
 
 async function readError(res: Response): Promise<string> {
   const body: unknown = await res.json().catch(() => null)

@@ -1,7 +1,6 @@
 package api
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"io"
@@ -11,6 +10,9 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/coder/websocket"
 
 	"checkcheck/internal/events"
 	"checkcheck/internal/store"
@@ -20,10 +22,11 @@ const testToken = "secret"
 
 func newTestServer(t *testing.T) *httptest.Server {
 	t.Helper()
-	return newTestServerWithHub(t, events.NewHub())
+	srv, _ := newTestServerWithHub(t, events.NewHub())
+	return srv
 }
 
-func newTestServerWithHub(t *testing.T, hub *events.Hub) *httptest.Server {
+func newTestServerWithHub(t *testing.T, hub *events.Hub) (*httptest.Server, *store.Store) {
 	t.Helper()
 	st, err := store.Open(context.Background(), filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
@@ -32,7 +35,7 @@ func newTestServerWithHub(t *testing.T, hub *events.Hub) *httptest.Server {
 	t.Cleanup(func() { st.Close() })
 	srv := httptest.NewServer(Handler(st, hub, testToken))
 	t.Cleanup(srv.Close)
-	return srv
+	return srv, st
 }
 
 type client struct {
@@ -42,6 +45,11 @@ type client struct {
 
 func (c client) do(method, path, body string) (int, []byte) {
 	c.t.Helper()
+	return c.doWith(method, path, body, nil)
+}
+
+func (c client) doWith(method, path, body string, header http.Header) (int, []byte) {
+	c.t.Helper()
 	var r io.Reader
 	if body != "" {
 		r = strings.NewReader(body)
@@ -49,6 +57,9 @@ func (c client) do(method, path, body string) (int, []byte) {
 	req, err := http.NewRequest(method, c.url+path, r)
 	if err != nil {
 		c.t.Fatal(err)
+	}
+	for k, v := range header {
+		req.Header[k] = v
 	}
 	req.Header.Set("Authorization", "Bearer "+testToken)
 	resp, err := http.DefaultClient.Do(req)
@@ -78,9 +89,9 @@ func (c client) expect(method, path, body string, wantStatus int, into any) {
 
 func TestAuth(t *testing.T) {
 	srv := newTestServer(t)
-	for _, path := range []string{"/api/items", "/api/events"} {
+	for _, method := range []string{"GET", "POST"} {
 		for _, header := range []string{"", "Bearer wrong", "Basic " + testToken, testToken} {
-			req, _ := http.NewRequest("GET", srv.URL+path, nil)
+			req, _ := http.NewRequest(method, srv.URL+"/api/items", nil)
 			if header != "" {
 				req.Header.Set("Authorization", header)
 			}
@@ -92,7 +103,7 @@ func TestAuth(t *testing.T) {
 			json.NewDecoder(resp.Body).Decode(&body)
 			resp.Body.Close()
 			if resp.StatusCode != http.StatusUnauthorized || body["error"] == "" {
-				t.Errorf("%s with Authorization %q: status %d body %v, want 401 with error", path, header, resp.StatusCode, body)
+				t.Errorf("%s /api/items with Authorization %q: status %d body %v, want 401 with error", method, header, resp.StatusCode, body)
 			}
 		}
 	}
@@ -440,57 +451,294 @@ func TestItemLink(t *testing.T) {
 	}
 }
 
-func TestEvents(t *testing.T) {
-	hub := events.NewHub()
-	srv := newTestServerWithHub(t, hub)
-	req, _ := http.NewRequest("GET", srv.URL+"/api/events", nil)
-	req.Header.Set("Authorization", "Bearer "+testToken)
-	resp, err := http.DefaultClient.Do(req)
+func dialEvents(t *testing.T, srv *httptest.Server) *websocket.Conn {
+	t.Helper()
+	conn, _, err := websocket.Dial(t.Context(), "ws"+strings.TrimPrefix(srv.URL, "http")+"/api/events", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
-	for k, want := range map[string]string{
-		"Content-Type":      "text/event-stream",
-		"Cache-Control":     "no-cache",
-		"X-Accel-Buffering": "no",
+	t.Cleanup(func() { conn.CloseNow() })
+	return conn
+}
+
+func sendText(t *testing.T, conn *websocket.Conn, msg string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	if err := conn.Write(ctx, websocket.MessageText, []byte(msg)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func receiveText(t *testing.T, conn *websocket.Conn) string {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	typ, msg, err := conn.Read(ctx)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if typ != websocket.MessageText {
+		t.Errorf("message type %v, want text", typ)
+	}
+	return string(msg)
+}
+
+// closeCode reads until the server closes conn and returns its close code.
+func closeCode(t *testing.T, conn *websocket.Conn) websocket.StatusCode {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	for {
+		if _, _, err := conn.Read(ctx); err != nil {
+			return websocket.CloseStatus(err)
+		}
+	}
+}
+
+const authMessage = `{"type":"auth","token":"` + testToken + `","client":"tab-1"}`
+
+func TestEventsAuth(t *testing.T) {
+	srv := newTestServer(t)
+	for _, tc := range []struct {
+		first string
+		want  websocket.StatusCode
+	}{
+		{`{"type":"auth","token":"wrong"}`, closeUnauthorized},
+		{`{"type":"auth","token":""}`, closeUnauthorized},
+		{`{"type":"auth"}`, websocket.StatusPolicyViolation},
+		{`{"type":"auth","token":1}`, websocket.StatusPolicyViolation},
+		{`{"type":"hello","token":"` + testToken + `"}`, websocket.StatusPolicyViolation},
+		{`{"token":"` + testToken + `"}`, websocket.StatusPolicyViolation},
+		{`auth ` + testToken, websocket.StatusPolicyViolation},
 	} {
-		if got := resp.Header.Get(k); resp.StatusCode != http.StatusOK || got != want {
-			t.Errorf("status %d %s %q, want 200 and %q", resp.StatusCode, k, got, want)
+		conn := dialEvents(t, srv)
+		sendText(t, conn, tc.first)
+		if got := closeCode(t, conn); got != tc.want {
+			t.Errorf("first message %s: closed with %v, want %v", tc.first, got, tc.want)
 		}
-	}
-	body := bufio.NewReader(resp.Body)
-	readMessage := func() string {
-		t.Helper()
-		var lines []string
-		for {
-			line, err := body.ReadString('\n')
-			if err != nil {
-				t.Fatalf("read stream after %q: %v", lines, err)
-			}
-			if line == "\n" {
-				return strings.Join(lines, "")
-			}
-			lines = append(lines, line)
-		}
-	}
-	if got := readMessage(); !strings.HasPrefix(got, ":") {
-		t.Errorf("first message %q, want a comment that flushes the headers", got)
 	}
 
-	hub.Publish(events.Event{Name: "preview", Data: map[string]any{
-		"link":    "https://example.com/post",
-		"preview": store.Preview{Title: "A post\nwith a newline", SiteName: "Example"},
-	}})
-	want := "event: preview\n" + `data: {"link":"https://example.com/post","preview":{"title":"A post\nwith a newline","site_name":"Example"}}` + "\n"
-	if got := readMessage(); got != want {
-		t.Errorf("event message:\n%s\nwant\n%s", got, want)
+	conn := dialEvents(t, srv)
+	if err := conn.Write(t.Context(), websocket.MessageBinary, []byte(authMessage)); err != nil {
+		t.Fatal(err)
+	}
+	if got := closeCode(t, conn); got != websocket.StatusPolicyViolation {
+		t.Errorf("binary auth message: closed with %v, want %v", got, websocket.StatusPolicyViolation)
+	}
+
+	conn = dialEvents(t, srv)
+	sendText(t, conn, `{"type":"auth","token":"`+testToken+`"}`)
+	if got := receiveText(t, conn); got != `{"type":"ready"}` {
+		t.Errorf("auth without client: got %s, want ready", got)
+	}
+
+	defer func(d time.Duration) { authTimeout = d }(authTimeout)
+	authTimeout = 50 * time.Millisecond
+	conn = dialEvents(t, srv)
+	if got := closeCode(t, conn); got != websocket.StatusPolicyViolation {
+		t.Errorf("no auth message: closed with %v, want %v", got, websocket.StatusPolicyViolation)
+	}
+}
+
+func TestEvents(t *testing.T) {
+	hub := events.NewHub()
+	srv, _ := newTestServerWithHub(t, hub)
+	conn := dialEvents(t, srv)
+	sendText(t, conn, authMessage)
+	if got := receiveText(t, conn); got != `{"type":"ready"}` {
+		t.Fatalf("after auth: got %s, want ready", got)
+	}
+
+	for _, tc := range []struct {
+		e    events.Event
+		want string
+	}{
+		{events.Event{Type: "changed", Client: "tab-2"}, `{"type":"changed","client":"tab-2"}`},
+		{events.Event{Type: "changed"}, `{"type":"changed"}`},
+		{
+			events.Event{Type: "preview", Link: "https://example.com/post", Preview: &store.Preview{Title: "A post", SiteName: "Example"}},
+			`{"type":"preview","link":"https://example.com/post","preview":{"title":"A post","site_name":"Example"}}`,
+		},
+	} {
+		hub.Publish(tc.e)
+		if got := receiveText(t, conn); got != tc.want {
+			t.Errorf("published %+v: got %s, want %s", tc.e, got, tc.want)
+		}
+	}
+
+	chatty := dialEvents(t, srv)
+	sendText(t, chatty, authMessage)
+	receiveText(t, chatty)
+	sendText(t, chatty, `{"type":"ping"}`)
+	if got := closeCode(t, chatty); got != websocket.StatusPolicyViolation {
+		t.Errorf("message after auth: closed with %v, want %v", got, websocket.StatusPolicyViolation)
 	}
 
 	hub.Close()
-	if rest, err := io.ReadAll(body); err != nil || len(rest) != 0 {
-		t.Errorf("after hub close: read %q, %v; want the stream to end", rest, err)
+	if got := closeCode(t, conn); got != websocket.StatusGoingAway {
+		t.Errorf("after hub close: closed with %v, want %v", got, websocket.StatusGoingAway)
 	}
+}
+
+func TestEventsPing(t *testing.T) {
+	defer func(d time.Duration) { pingInterval = d }(pingInterval)
+	pingInterval = 20 * time.Millisecond
+	conn := dialEvents(t, newTestServer(t))
+	sendText(t, conn, authMessage)
+	receiveText(t, conn)
+	for range 2 {
+		if got := receiveText(t, conn); got != `{"type":"ping"}` {
+			t.Errorf("idle socket got %s, want ping", got)
+		}
+	}
+}
+
+func TestEventsDisconnectsASubscriberThatFellBehind(t *testing.T) {
+	hub := events.NewHub()
+	srv, _ := newTestServerWithHub(t, hub)
+	conn := dialEvents(t, srv)
+	conn.SetReadLimit(-1)
+	sendText(t, conn, authMessage)
+	receiveText(t, conn)
+
+	// Big enough that, while the client doesn't read, the socket buffers
+	// hold far fewer of these than the hub buffers.
+	big := events.Event{Type: "preview", Link: strings.Repeat("x", 1<<20)}
+	for range 48 {
+		hub.Publish(big)
+	}
+	if got := closeCode(t, conn); got != websocket.StatusTryAgainLater {
+		t.Errorf("after falling behind: closed with %v, want %v", got, websocket.StatusTryAgainLater)
+	}
+}
+
+func TestIdempotencyKey(t *testing.T) {
+	srv, st := newTestServerWithHub(t, events.NewHub())
+	c := client{t, srv.URL}
+	key := func(k string) http.Header { return http.Header{"Idempotency-Key": {k}} }
+	post := func(path, body string, header http.Header, wantStatus int) map[string]any {
+		t.Helper()
+		status, b := c.doWith("POST", path, body, header)
+		var v map[string]any
+		json.Unmarshal(b, &v)
+		if status != wantStatus {
+			t.Fatalf("POST %s %s with %v: status %d, want %d; body %s", path, body, header, status, wantStatus, b)
+		}
+		return v
+	}
+	count := func(path string) int {
+		t.Helper()
+		var list []any
+		c.expect("GET", path, "", http.StatusOK, &list)
+		return len(list)
+	}
+
+	const link = "https://example.com/post"
+	if err := st.SavePreview(context.Background(), link, store.Preview{Title: "A post"}); err != nil {
+		t.Fatal(err)
+	}
+	item := post("/api/items", `{"title":"Read `+link+`"}`, key("k1"), http.StatusCreated)
+	again := post("/api/items", `{"title":""}`, key("k1"), http.StatusCreated)
+	if again["id"] != item["id"] || again["title"] != item["title"] || again["preview"] == nil {
+		t.Errorf("replay = %v, want %v with its preview", again, item)
+	}
+	cat := post("/api/categories", `{"name":"Groceries"}`, key("k1"), http.StatusCreated)
+	if again := post("/api/categories", `{"name":"Other"}`, key("k1"), http.StatusCreated); again["id"] != cat["id"] {
+		t.Errorf("category replay = %v, want %v", again, cat)
+	}
+	if n := count("/api/items"); n != 1 {
+		t.Errorf("%d items, want 1", n)
+	}
+	if n := count("/api/categories"); n != 1 {
+		t.Errorf("%d categories, want 1", n)
+	}
+
+	for _, header := range []http.Header{key(""), key(strings.Repeat("é", 101)), {"Idempotency-Key": {"a", "b"}}} {
+		for _, path := range []string{"/api/items", "/api/categories"} {
+			if body := post(path, `{"title":"x","name":"x"}`, header, http.StatusBadRequest); body["error"] == nil {
+				t.Errorf("POST %s with %v: body %v, want an error", path, header, body)
+			}
+		}
+	}
+	post("/api/items", `{"title":"x"}`, key(strings.Repeat("é", 100)), http.StatusCreated)
+
+	post("/api/items", `{"title":" "}`, key("k2"), http.StatusBadRequest)
+	post("/api/categories", `{"name":"groceries"}`, key("k2"), http.StatusConflict)
+	post("/api/items", `{"title":"Eggs"}`, key("k2"), http.StatusCreated)
+	post("/api/categories", `{"name":"Hardware"}`, key("k2"), http.StatusCreated)
+	post("/api/items", `{"title":"Eggs"}`, nil, http.StatusCreated)
+	post("/api/items", `{"title":"Eggs"}`, nil, http.StatusCreated)
+	if n := count("/api/items"); n != 5 {
+		t.Errorf("%d items, want 5", n)
+	}
+
+	c.expect("DELETE", "/api/items/"+itoa(int64(item["id"].(float64))), "", http.StatusNoContent, nil)
+	post("/api/items", `{"title":"Read `+link+`"}`, key("k1"), http.StatusNotFound)
+	c.expect("DELETE", "/api/categories/"+itoa(int64(cat["id"].(float64))), "", http.StatusNoContent, nil)
+	post("/api/categories", `{"name":"Groceries"}`, key("k1"), http.StatusNotFound)
+}
+
+func TestWritesReportChangesWithTheClientID(t *testing.T) {
+	srv, st := newTestServerWithHub(t, events.NewHub())
+	c := client{t, srv.URL}
+	changes := make(chan string, 16)
+	st.OnChange(func(ctx context.Context) { changes <- ClientID(ctx) })
+	expectChanges := func(what string, want ...string) {
+		t.Helper()
+		var got []string
+		for len(changes) > 0 {
+			got = append(got, <-changes)
+		}
+		if strings.Join(got, " ") != strings.Join(want, " ") || len(got) != len(want) {
+			t.Errorf("%s: changes from %q, want %q", what, got, want)
+		}
+	}
+	tab := http.Header{"X-Checkcheck-Client": {"tab-1"}}
+	call := func(method, path, body string, header http.Header, wantStatus int) []byte {
+		t.Helper()
+		status, b := c.doWith(method, path, body, header)
+		if status != wantStatus {
+			t.Fatalf("%s %s: status %d, want %d; body %s", method, path, status, wantStatus, b)
+		}
+		return b
+	}
+
+	var cat store.Category
+	json.Unmarshal(call("POST", "/api/categories", `{"name":"a"}`, tab, http.StatusCreated), &cat)
+	var item store.Item
+	json.Unmarshal(call("POST", "/api/items", `{"title":"a"}`, tab, http.StatusCreated), &item)
+	expectChanges("creates", "tab-1", "tab-1")
+	for _, w := range []struct{ method, path, body string }{
+		{"PATCH", "/api/categories/" + itoa(cat.ID), `{"name":"b"}`},
+		{"PUT", "/api/categories/order", `{"order":[null,` + itoa(cat.ID) + `]}`},
+		{"PATCH", "/api/items/" + itoa(item.ID), `{"checked":true,"before_id":null}`},
+		{"DELETE", "/api/items/" + itoa(item.ID), ""},
+		{"POST", "/api/items/" + itoa(item.ID) + "/restore", ""},
+		{"DELETE", "/api/categories/" + itoa(cat.ID), ""},
+	} {
+		status, b := c.doWith(w.method, w.path, w.body, tab)
+		if status >= 300 {
+			t.Fatalf("%s %s: status %d; body %s", w.method, w.path, status, b)
+		}
+		expectChanges(w.method+" "+w.path, "tab-1")
+	}
+
+	for _, path := range []string{"/api/items", "/api/items/deleted", "/api/categories", "/api/categories/order"} {
+		call("GET", path, "", tab, http.StatusOK)
+	}
+	call("PATCH", "/api/items/999", `{"checked":true}`, tab, http.StatusNotFound)
+	expectChanges("reads and a failed write")
+
+	keyed := http.Header{"X-Checkcheck-Client": {"tab-1"}, "Idempotency-Key": {"k"}}
+	call("POST", "/api/items", `{"title":"b"}`, keyed, http.StatusCreated)
+	call("POST", "/api/items", `{"title":"b"}`, keyed, http.StatusCreated)
+	expectChanges("a keyed create and its replay", "tab-1")
+
+	call("POST", "/api/items", `{"title":"c"}`, http.Header{"X-Checkcheck-Client": {strings.Repeat("é", 64)}}, http.StatusCreated)
+	call("POST", "/api/items", `{"title":"c"}`, http.Header{"X-Checkcheck-Client": {strings.Repeat("é", 65)}}, http.StatusCreated)
+	call("POST", "/api/items", `{"title":"c"}`, nil, http.StatusCreated)
+	expectChanges("client ids of 64 and 65 characters and none", strings.Repeat("é", 64), "", "")
 }
 
 func itoa(id int64) string {

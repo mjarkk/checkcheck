@@ -95,11 +95,10 @@ func TestService(t *testing.T) {
 	if n := h.count("/slow"); n != 1 {
 		t.Errorf("/slow fetched %d times, want once while in flight", n)
 	}
-	e := <-evs
-	data, _ := json.Marshal(e.Data)
-	want := `{"link":"` + srv.URL + `/slow","preview":{"title":"/slow","icon":"` + srv.URL + `/favicon.ico"}}`
-	if e.Name != "preview" || string(data) != want {
-		t.Errorf("event %s %s, want preview %s", e.Name, data, want)
+	data, _ := json.Marshal(<-evs)
+	want := `{"type":"preview","link":"` + srv.URL + `/slow","preview":{"title":"/slow","icon":"` + srv.URL + `/favicon.ico"}}`
+	if string(data) != want {
+		t.Errorf("event %s, want %s", data, want)
 	}
 	if items := list(); items[0].Preview == nil || items[0].Preview.Title != "/slow" {
 		t.Errorf("stored preview = %+v", items[0].Preview)

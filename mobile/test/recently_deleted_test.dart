@@ -288,6 +288,7 @@ void main() {
           baseUrl: 'http://localhost:8081',
           token: 'dev',
           httpClient: server.client,
+          connectWebSocket: server.connect,
         ),
         cache: cache,
         onUnauthorized: () {},

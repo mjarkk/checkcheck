@@ -1874,7 +1874,7 @@ code {
 }
 
 /* The icon buttons need the wordmark's room on the narrowest phones. */
-@media (max-width: 21.24rem) {
+@media (max-width: 21.99rem) {
   .brand-name {
     display: none;
   }

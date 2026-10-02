@@ -1,12 +1,15 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
+import 'dart:io' show HandshakeException;
 
 import 'package:checkcheck/api/api_client.dart';
 import 'package:checkcheck/api/models.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:web_socket/testing.dart';
+import 'package:web_socket/web_socket.dart' as ws;
+import 'package:web_socket_channel/adapter_web_socket_channel.dart';
 
 void main() {
   late List<http.Request> requests;
@@ -118,6 +121,47 @@ void main() {
       'title': 'Milk',
       'category_id': 1,
     });
+  });
+
+  test('creates send their Idempotency-Key, and none without one', () async {
+    final api = client(
+      (request) => request.url.path == '/api/items'
+          ? json(201, item)
+          : json(201, {
+              'id': 1,
+              'name': 'Groceries',
+              'created_at': '2026-10-01T15:04:05Z',
+              'updated_at': '2026-10-01T15:04:05Z',
+            }),
+    );
+
+    await api.createItem('Milk', key: 'item-key');
+    await api.createCategory('Groceries', key: 'category-key');
+    await api.createItem('Milk');
+    await api.createCategory('Groceries');
+
+    expect(
+      [for (final r in requests) r.headers['Idempotency-Key']],
+      ['item-key', 'category-key', null, null],
+    );
+  });
+
+  test('every request carries the client id, which is per client', () async {
+    final api = client(
+      (request) => request.url.path == '/api/health'
+          ? json(200, {'status': 'ok'})
+          : json(200, []),
+    );
+
+    await api.checkHealth();
+    await api.listItems();
+    await api.listCategories();
+
+    expect(api.clientId, matches(RegExp(r'^[0-9a-f]{32}$')));
+    expect([
+      for (final r in requests) r.headers['X-Checkcheck-Client'],
+    ], everyElement(api.clientId));
+    expect(client((_) => json(200, [])).clientId, isNot(api.clientId));
   });
 
   test('updateItem sends an explicit null category_id to clear it', () async {
@@ -305,158 +349,193 @@ void main() {
   });
 
   group('events', () {
-    late StreamController<List<int>> body;
-    late List<http.BaseRequest> opened;
+    late List<Uri> opened;
+    late List<Object?> signIns;
+    late ws.WebSocket server;
+    late bool closedByClient;
 
-    ApiClient streaming({
-      int status = 200,
-      Duration timeout = const Duration(seconds: 10),
-    }) {
-      body = StreamController();
-      opened = [];
-      return ApiClient(
-        baseUrl: 'https://check.example.com',
-        token: 's3cret',
-        timeout: timeout,
-        httpClient: MockClient.streaming((request, _) async {
-          opened.add(request);
-          if (status != 200) {
-            return http.StreamedResponse(
-              Stream.value(utf8.encode('{"error":"unauthorized"}')),
-              status,
-            );
+    ApiClient api({
+      String baseUrl = 'https://check.example.com',
+      Future<ws.WebSocket>? connecting,
+    }) => ApiClient(
+      baseUrl: baseUrl,
+      token: 's3cret',
+      httpClient: MockClient((_) async => http.Response('', 404)),
+      connectWebSocket: (url) {
+        opened.add(url);
+        if (connecting != null) return AdapterWebSocketChannel(connecting);
+        final (client, peer) = fakes();
+        server = peer;
+        peer.events.listen((event) {
+          switch (event) {
+            case ws.TextDataReceived(:final text):
+              signIns.add(jsonDecode(text));
+            case ws.CloseReceived():
+              closedByClient = true;
+            case ws.BinaryDataReceived():
           }
-          return http.StreamedResponse(body.stream, 200);
-        }),
-      );
-    }
+        });
+        return AdapterWebSocketChannel(client);
+      },
+    );
 
-    Future<void> abortOf(http.BaseRequest request) =>
-        (request as http.Abortable).abortTrigger!;
+    void send(Object message) => server.sendText(jsonEncode(message));
 
-    test('asks for the stream with the token', () async {
-      final api = streaming();
-
-      await api.events();
-
-      final request = opened.single;
-      expect(request.method, 'GET');
-      expect(request.url.toString(), 'https://check.example.com/api/events');
-      expect(request.headers['Authorization'], 'Bearer s3cret');
-      expect(request.headers['Accept'], 'text/event-stream');
+    setUp(() {
+      opened = [];
+      signIns = [];
+      closedByClient = false;
     });
 
-    test('yields preview events, however the bytes are split', () async {
-      final api = streaming();
-      final events = await api.events();
-      final received = <PreviewEvent>[];
-      final done = events.forEach(received.add);
+    test('opens wss:// and signs in with the token and client id', () async {
+      final client = api();
+      final subscription = client.events().listen(null);
+      await pumpEventQueue();
 
-      const text =
-          ': ping\n\n'
-          'event: preview\r\n'
-          'data: {"link":"https://a.example","preview":\r\n'
-          'data: {"title":"Ä","site_name":"A"}}\r\n'
-          '\r\n'
-          'event: other\n'
-          'data: {"link":"https://b.example","preview":{"title":"B"}}\n'
-          '\n'
-          'data: {"link":"https://c.example","preview":{"title":"C"}}\n'
-          '\n'
-          'event: preview\n'
-          'data: not json\n'
-          '\n'
-          'event:preview\n'
-          'data:{"link":"https://d.example","preview":{"image":"https://d.example/i.png"}}\n'
-          '\n'
-          'event: preview\n'
-          'data: {"link":"https://e.example","preview":{"title":"cut off"}}\n';
-      final bytes = utf8.encode(text);
-      for (var i = 0; i < bytes.length; i += 7) {
-        body.add(bytes.sublist(i, i + 7 > bytes.length ? bytes.length : i + 7));
-        await pumpEventQueue();
-      }
-      await body.close();
-      await done;
-
-      expect(received, [
-        (
-          link: 'https://a.example',
-          preview: const Preview(title: 'Ä', siteName: 'A'),
-        ),
-        (
-          link: 'https://d.example',
-          preview: const Preview(image: 'https://d.example/i.png'),
-        ),
+      expect(opened.single.toString(), 'wss://check.example.com/api/events');
+      expect(signIns, [
+        {'type': 'auth', 'token': 's3cret', 'client': client.clientId},
       ]);
+      await subscription.cancel();
     });
 
-    test('a 401 is an UnauthorizedException', () {
-      final api = streaming(status: 401);
+    test('opens ws:// for http and keeps a path prefix', () async {
+      final subscription = api(
+        baseUrl: 'http://192.168.1.5:8181/checkcheck',
+      ).events().listen(null);
+      await pumpEventQueue();
 
-      expect(api.events(), throwsA(isA<UnauthorizedException>()));
+      expect(
+        opened.single.toString(),
+        'ws://192.168.1.5:8181/checkcheck/api/events',
+      );
+      await subscription.cancel();
     });
 
-    test('a lost connection fails the stream with NetworkException', () async {
-      final api = streaming();
-      final events = await api.events();
+    test('passes on ready, changed and preview; skips pings, its own '
+        'changes and what it does not know', () async {
+      final client = api();
+      final seen = <ServerEvent>[];
+      final subscription = client.events().listen(seen.add);
+      await pumpEventQueue();
 
-      body.addError(http.ClientException('Connection reset'));
+      send({'type': 'ready'});
+      send({'type': 'ping'});
+      send({'type': 'changed', 'client': client.clientId});
+      send({'type': 'changed', 'client': 'another client'});
+      send({'type': 'changed'});
+      send({
+        'type': 'preview',
+        'link': 'https://a.example',
+        'preview': {'title': 'Ä', 'site_name': 'A'},
+      });
+      send({'type': 'preview', 'link': 'https://b.example'});
+      send({'type': 'something new'});
+      server.sendText('not json');
+      await pumpEventQueue();
 
-      await expectLater(events, emitsError(isA<NetworkException>()));
+      expect(seen, [
+        isA<ReadyEvent>(),
+        isA<ChangedEvent>(),
+        isA<ChangedEvent>(),
+        isA<PreviewEvent>()
+            .having((e) => e.link, 'link', 'https://a.example')
+            .having(
+              (e) => e.preview,
+              'preview',
+              const Preview(title: 'Ä', siteName: 'A'),
+            ),
+      ]);
+      await subscription.cancel();
     });
 
-    // Cancelling the body is what makes IOClient close the socket.
-    test('cancelling the stream stops reading the response', () async {
-      final api = streaming();
-      final subscription = (await api.events()).listen(null);
-      var cancelled = false;
-      body.onCancel = () => cancelled = true;
+    test(
+      'close code 4401 ends the stream with UnauthorizedException',
+      () async {
+        final events = api().events();
+        final ended = expectLater(
+          events,
+          emitsInOrder([emitsError(isA<UnauthorizedException>()), emitsDone]),
+        );
+        await pumpEventQueue();
+
+        await server.close(4401, 'unauthorized');
+
+        await ended;
+      },
+    );
+
+    test('any other close ends it with NetworkException', () async {
+      final events = api().events();
+      final ended = expectLater(
+        events,
+        emitsInOrder([
+          isA<ReadyEvent>(),
+          emitsError(isA<NetworkException>()),
+          emitsDone,
+        ]),
+      );
+      await pumpEventQueue();
+      send({'type': 'ready'});
+
+      await server.close(4000);
+
+      await ended;
+    });
+
+    test('a connection that fails is a NetworkException', () async {
+      await expectLater(
+        api(
+          connecting: Future.error(ws.WebSocketException('refused')),
+        ).events(),
+        emitsInOrder([emitsError(isA<NetworkException>()), emitsDone]),
+      );
+    });
+
+    test('cancelling closes the socket', () async {
+      final subscription = api().events().listen(null);
+      await pumpEventQueue();
 
       await subscription.cancel();
-
-      expect(cancelled, isTrue);
-    });
-
-    test('completing abort closes the connection', () async {
-      final api = streaming();
-      final abort = Completer<void>();
-      await api.events(abort: abort.future);
-      var aborted = false;
-      abortOf(opened.single).then((_) => aborted = true);
-
-      abort.complete();
       await pumpEventQueue();
 
-      expect(aborted, isTrue);
+      expect(closedByClient, isTrue);
     });
 
-    test('only connecting has a timeout', () async {
-      final slow = ApiClient(
-        baseUrl: 'https://check.example.com',
-        token: 't',
-        timeout: const Duration(milliseconds: 10),
-        httpClient: MockClient.streaming((_, _) async {
-          await Future<void>.delayed(const Duration(seconds: 1));
-          return http.StreamedResponse(const Stream.empty(), 200);
-        }),
-      );
-      await expectLater(slow.events(), throwsA(isA<NetworkException>()));
+    testWidgets('opening gives up after the timeout', (tester) async {
+      final errors = <Object>[];
+      api(
+        connecting: Completer<ws.WebSocket>().future,
+      ).events().listen(null, onError: errors.add);
 
-      final api = streaming(timeout: const Duration(milliseconds: 10));
-      final events = await api.events();
-      final received = <PreviewEvent>[];
-      events.listen(received.add);
-      await Future<void>.delayed(const Duration(milliseconds: 50));
-      body.add(
-        utf8.encode(
-          'event: preview\n'
-          'data: {"link":"https://a.example","preview":{"title":"A"}}\n\n',
-        ),
-      );
-      await pumpEventQueue();
+      await tester.pump(const Duration(seconds: 9));
+      expect(errors, isEmpty);
+      await tester.pump(const Duration(seconds: 1));
 
-      expect(received.single.link, 'https://a.example');
+      expect(errors.single, isA<NetworkException>());
+    });
+
+    testWidgets('40 s without a message closes the socket with '
+        'NetworkException; a message restarts the wait', (tester) async {
+      final errors = <Object>[];
+      var done = false;
+      api().events().listen(
+        null,
+        onError: errors.add,
+        onDone: () => done = true,
+      );
+      await tester.pump();
+
+      await tester.pump(const Duration(seconds: 30));
+      send({'type': 'ping'});
+      await tester.pump(const Duration(seconds: 39));
+      expect(done, isFalse);
+      expect(closedByClient, isFalse);
+      await tester.pump(const Duration(seconds: 1));
+
+      expect(errors.single, isA<NetworkException>());
+      expect(done, isTrue);
+      expect(closedByClient, isTrue);
     });
   });
 }

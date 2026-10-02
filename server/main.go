@@ -53,6 +53,7 @@ func run() error {
 	previews := linkpreview.NewService(st, hub, linkpreview.NewClient())
 	defer previews.Close()
 	st.OnMissingPreview(previews.Request)
+	publishChanges(st, hub)
 	go purgeDeleted(ctx, st)
 
 	srv := newServer(addr, st, hub, token, webUI())
@@ -68,15 +69,29 @@ func run() error {
 	slog.Info("shutting down")
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	return srv.Shutdown(shutdownCtx)
+	return shutdown(shutdownCtx, srv, hub)
 }
 
 func newServer(addr string, st *store.Store, hub *events.Hub, token string, ui http.Handler) *http.Server {
 	srv := &http.Server{Addr: addr, Handler: routes(st, hub, token, ui), ReadHeaderTimeout: 10 * time.Second}
-	// Shutdown waits for every connection to go idle, which an open event
-	// stream only does once the hub closes it.
+	// Shutdown neither waits for nor closes hijacked connections, so the
+	// event sockets only close, with 1001, once the hub does.
 	srv.RegisterOnShutdown(hub.Close)
 	return srv
+}
+
+// shutdown waits for the event sockets too, since otherwise the process can
+// exit before they got their close frame.
+func shutdown(ctx context.Context, srv *http.Server, hub *events.Hub) error {
+	err := srv.Shutdown(ctx)
+	hub.Wait(ctx)
+	return err
+}
+
+func publishChanges(st *store.Store, hub *events.Hub) {
+	st.OnChange(func(ctx context.Context) {
+		hub.Publish(events.Event{Type: "changed", Client: api.ClientID(ctx)})
+	})
 }
 
 func routes(st *store.Store, hub *events.Hub, token string, ui http.Handler) http.Handler {
@@ -89,8 +104,8 @@ func routes(st *store.Store, hub *events.Hub, token string, ui http.Handler) htt
 	return mux
 }
 
-// Hourly is enough: the store hides expired items itself, so this only frees
-// their space.
+// Hourly is enough: the store ignores expired items and idempotency keys
+// itself, so this only frees their space.
 func purgeDeleted(ctx context.Context, st *store.Store) {
 	tick := time.NewTicker(time.Hour)
 	defer tick.Stop()

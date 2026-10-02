@@ -21,6 +21,7 @@ void main() {
         baseUrl: 'http://localhost',
         token: 'dev',
         httpClient: server.client,
+        connectWebSocket: server.connect,
       ),
       cache: MemoryChecklistCache(),
       onUnauthorized: () {},

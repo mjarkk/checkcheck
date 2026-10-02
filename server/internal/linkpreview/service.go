@@ -103,13 +103,8 @@ func (s *Service) fetch(link string) {
 		return
 	}
 	if p != (store.Preview{}) {
-		s.hub.Publish(events.Event{Name: "preview", Data: previewEvent{link, p}})
+		s.hub.Publish(events.Event{Type: "preview", Link: link, Preview: &p})
 	}
-}
-
-type previewEvent struct {
-	Link    string        `json:"link"`
-	Preview store.Preview `json:"preview"`
 }
 
 // Close stops all fetches and waits for them to end. Requests after Close are

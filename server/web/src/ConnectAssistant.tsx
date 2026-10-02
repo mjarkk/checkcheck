@@ -91,12 +91,12 @@ function ClaudeSteps({ url, token, tokenUrl }: StepsProps) {
           <strong>Customize → Connectors</strong> and click <strong>Add custom connector</strong>.
         </li>
         <li>
-          Name it checkcheck, paste this URL and leave authentication on <strong>No sign-in</strong>. The token is
+          Name it CheckCheck, paste this URL and leave authentication on <strong>No sign-in</strong>. The token is
           part of the URL.
           <Snippet label="Connector URL" code={tokenUrl} />
         </li>
         <li>
-          Click <strong>Add</strong>. checkcheck now also works in the Claude app on your phone. Turn it on in a chat
+          Click <strong>Add</strong>. CheckCheck now also works in the Claude app on your phone. Turn it on in a chat
           under <strong>+ → Connectors</strong>.
         </li>
       </ol>
@@ -115,7 +115,7 @@ function DesktopSteps({ url, token }: Pick<StepsProps, 'url' | 'token'>) {
     <ol className="steps">
       <li>
         Install <a href="https://nodejs.org">Node.js</a> 18 or newer if you don't have it. Claude Desktop reaches
-        checkcheck through the <code>mcp-remote</code> bridge, which runs with <code>npx</code>.
+        CheckCheck through the <code>mcp-remote</code> bridge, which runs with <code>npx</code>.
       </li>
       <li>
         In Claude Desktop, open <strong>Settings → Developer → Edit Config</strong>.
@@ -126,7 +126,7 @@ function DesktopSteps({ url, token }: Pick<StepsProps, 'url' | 'token'>) {
         <Snippet label="claude_desktop_config.json" code={desktopConfig(url, token)} wrap={false} />
       </li>
       <li>
-        Quit Claude Desktop completely and open it again. If checkcheck fails to start, set <code>command</code> to the
+        Quit Claude Desktop completely and open it again. If CheckCheck fails to start, set <code>command</code> to the
         full path of <code>npx</code>.
       </li>
     </ol>
@@ -137,14 +137,14 @@ function CodeSteps({ url, token }: StepsProps) {
   return (
     <ol className="steps">
       <li>
-        Run this in a terminal. <code>--scope user</code> makes checkcheck available in all your projects.
+        Run this in a terminal. <code>--scope user</code> makes CheckCheck available in all your projects.
         <Snippet
           label="Terminal"
           code={`claude mcp add --transport http --scope user checkcheck ${url} --header "Authorization: Bearer ${token}"`}
         />
       </li>
       <li>
-        Start Claude Code and run <code>/mcp</code> to check that checkcheck is connected.
+        Start Claude Code and run <code>/mcp</code> to check that CheckCheck is connected.
       </li>
     </ol>
   )

@@ -22,7 +22,12 @@ void main() {
 
   Future<void> pumpApp(WidgetTester tester) async {
     await tester.pumpWidget(
-      CheckcheckApp(store: store, cache: cache, httpClient: server.client),
+      CheckcheckApp(
+        store: store,
+        cache: cache,
+        httpClient: server.client,
+        connectWebSocket: server.connect,
+      ),
     );
     await tester.pumpAndSettle();
   }

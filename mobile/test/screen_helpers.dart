@@ -15,6 +15,7 @@ Future<ChecklistModel> openModel(FakeServer server) async {
       baseUrl: 'http://localhost',
       token: server.token,
       httpClient: server.client,
+      connectWebSocket: server.connect,
     ),
     cache: MemoryChecklistCache(),
     onUnauthorized: () {},

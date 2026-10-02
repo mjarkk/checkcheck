@@ -38,8 +38,9 @@ class CachedChecklist {
   });
 
   // 2 added the category order and the previews; 1 still decodes, so an
-  // upgrade keeps unsent changes. The deleted items and a delete's time kept
-  // 2: they are optional on decode, so a 2 without them still reads.
+  // upgrade keeps unsent changes. The deleted items, a delete's time and a
+  // create's key kept 2: they are optional on decode, so a 2 without them
+  // still reads.
   static const _version = 2;
 
   /// The base URL the data belongs to.

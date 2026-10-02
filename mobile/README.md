@@ -1,6 +1,6 @@
-# checkcheck mobile
+# CheckCheck mobile
 
-Flutter client for the checkcheck server. It speaks the REST contract in
+Flutter client for the CheckCheck server. It speaks the REST contract in
 [`../API.md`](../API.md) and follows its display conventions and shared look.
 For now the project has iOS only.
 
@@ -93,6 +93,8 @@ flutter test
 - `lib/theme.dart`: Material 3 colours from seed `#6750A4` with the vibrant
   variant, and the webapp's type scale in the bundled Roboto Flex
   (`assets/fonts/`, OFL). Light or dark follows the system.
+- `lib/home_widget.dart`, `ios/CheckcheckWidget/`, `ios/Shared/`: the iOS
+  home-screen widget (see below)
 
 ## Offline
 
@@ -105,7 +107,7 @@ top. Each change sends only the fields it sets, so it doesn't undo edits made
 elsewhere in the meantime.
 
 - A change the server rejects is dropped and shown as an error. A 5xx or a
-  response that isn't checkcheck's own JSON (a proxy's error page while the
+  response that isn't CheckCheck's own JSON (a proxy's error page while the
   server restarts) is retried instead.
 - An item added offline to a category that was deleted elsewhere is created
   uncategorized. A category added offline whose name was taken elsewhere
@@ -113,14 +115,43 @@ elsewhere in the meantime.
 - **Disconnect** deletes the copy. A rejected token keeps it, so signing in to
   the same server again sends what was left.
 - A create whose response got lost (a timeout, or the app killed mid-request)
-  is sent again, so it can leave a duplicate: the API has no idempotency key.
+  is sent again with the `Idempotency-Key` it was queued with, so the server
+  makes it once. If it was deleted elsewhere meanwhile, the retry is dropped
+  without an error, together with the changes waiting for it.
 - Moves (`before_id`) and the category order are queued like any other
   change. A move whose anchor item is gone, or that names a category deleted
   elsewhere, is retried without that part; an order is refitted to the
   categories the server has.
-- Link previews come from responses and from `/api/events`, which the app
-  follows while it is in the foreground; they are kept with the copy. While a
-  row is dragged, what the server sends waits until the drop.
+- While the app is in the foreground it follows the `/api/events`
+  WebSocket, so changes made elsewhere (the web app, MCP) show up live. It
+  fetches again after every connect, since missed events aren't replayed,
+  and 300 ms after the last change event. A dropped socket, or one silent
+  for 40 s, reconnects with backoff. Link previews come from it and from
+  responses, and are kept with the copy. While a row is dragged, what the
+  server sends waits until the drop.
+
+## Home-screen widget
+
+`ios/CheckcheckWidget/` is a WidgetKit extension (iOS 17+, SwiftUI, since
+Flutter can't draw widgets) that shows the open items and checks them off. Its
+behaviour and look are specified in "Home-screen widget" in
+[`../API.md`](../API.md). `Theme.swift` copies `lib/theme.dart`, the checkbox
+and the logo by hand, so a look change in the app has to be made there too.
+
+- It talks to the server itself, through the same four REST calls, and never
+  through the app's offline queue, so a tick made on it needs a connection.
+- The app copies its server URL and token into a keychain item shared through
+  the app group `group.nl.mkopenga.checkcheck` (`ios/Shared/`), over the
+  `checkcheck/widget` method channel in `lib/home_widget.dart`. It writes the
+  copy on connect and on every start, and deletes it on Disconnect. It also
+  asks the widget to reload once a sync has finished.
+- The first signed build (`mise run mobile:install`) registers the widget's
+  App ID `nl.mkopenga.checkcheck.widget` and the app group in team
+  `N65XC23LP9`. Xcode's automatic signing does this, which needs the team's
+  Apple account in Xcode → Settings → Accounts.
+- To add it on the phone: long-press the home screen, **Edit → Add Widget**,
+  then search for CheckCheck. Long-press the widget and choose **Edit Widget**
+  to pick a list.
 
 ## Adding Android later
 

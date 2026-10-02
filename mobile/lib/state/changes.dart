@@ -132,6 +132,7 @@ sealed class Change {
       title: json['title'] as String,
       categoryId: json['category_id'] as int?,
       createdAt: DateTime.parse(json['created_at'] as String),
+      key: json['key'] as String?,
     ),
     'update_item' => UpdateItem(
       json['id'] as int,
@@ -157,6 +158,7 @@ sealed class Change {
       json['id'] as int,
       name: json['name'] as String,
       createdAt: DateTime.parse(json['created_at'] as String),
+      key: json['key'] as String?,
     ),
     'rename_category' => RenameCategory(
       json['id'] as int,
@@ -188,6 +190,7 @@ final class CreateItem extends Change {
     required this.title,
     required this.categoryId,
     required this.createdAt,
+    required this.key,
   });
 
   @override
@@ -195,6 +198,10 @@ final class CreateItem extends Change {
   final String title;
   final int? categoryId;
   final DateTime createdAt;
+
+  /// The `Idempotency-Key` every try of this create sends; null when it was
+  /// queued before the app made keys.
+  final String? key;
 
   @override
   Snapshot applyTo(Snapshot snapshot) => snapshot.withItems([
@@ -219,6 +226,7 @@ final class CreateItem extends Change {
       title: title,
       categoryId: categoryId == from ? to : categoryId,
       createdAt: createdAt,
+      key: key,
     );
   }
 
@@ -229,6 +237,7 @@ final class CreateItem extends Change {
     'title': title,
     'category_id': categoryId,
     'created_at': createdAt.toIso8601String(),
+    'key': ?key,
   };
 }
 
@@ -429,12 +438,16 @@ final class CreateCategory extends Change {
     this.target, {
     required this.name,
     required this.createdAt,
+    required this.key,
   });
 
   @override
   final int target;
   final String name;
   final DateTime createdAt;
+
+  /// As [CreateItem.key].
+  final String? key;
 
   @override
   Snapshot applyTo(Snapshot snapshot) => snapshot.withCategoryAdded(
@@ -451,7 +464,7 @@ final class CreateCategory extends Change {
       ? this
       : to == null
       ? null
-      : CreateCategory(to, name: name, createdAt: createdAt);
+      : CreateCategory(to, name: name, createdAt: createdAt, key: key);
 
   @override
   Map<String, Object?> toJson() => {
@@ -459,6 +472,7 @@ final class CreateCategory extends Change {
     'id': target,
     'name': name,
     'created_at': createdAt.toIso8601String(),
+    'key': ?key,
   };
 }
 

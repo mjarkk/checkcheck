@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>checkcheck</string>
+	<string>CheckCheck</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -15,7 +15,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>checkcheck</string>
+	<string>CheckCheck</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -32,9 +32,9 @@
 		<true/>
 	</dict>
 	<key>NSCameraUsageDescription</key>
-	<string>checkcheck uses the camera to scan the connect QR code shown by your checkcheck server.</string>
+	<string>CheckCheck uses the camera to scan the connect QR code shown by your CheckCheck server.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>checkcheck connects to your self-hosted checkcheck server on the local network.</string>
+	<string>CheckCheck connects to your self-hosted CheckCheck server on the local network.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

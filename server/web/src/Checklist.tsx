@@ -38,7 +38,7 @@ import { MoveItemsDialog } from './MoveItemsDialog'
 import { captureScroll, inheritMotion, layoutPass, motionRef, prepareLayoutPass } from './motion'
 import { NewCategoryDialog } from './NewCategoryDialog'
 import { RecentlyDeleted } from './RecentlyDeleted'
-import { hasUnsaved, markUnsaved } from './saving'
+import { hasUnsaved, loadBetweenWrites, markUnsaved } from './saving'
 import { buildSections, countItems, type Section } from './sections'
 import { useDeletedRoute } from './useDeletedRoute'
 import { usePasteRoute, type PasteTarget } from './usePasteRoute'
@@ -122,16 +122,16 @@ export function Checklist({ token, onSignOut, onUnauthorized }: Props) {
     }
     const seq = ++loadSeq.current
     try {
-      const [nextCategories, nextOrder, nextItems] = await Promise.all([
-        api.listCategories(),
-        api.categoryOrder(),
-        api.listItems(),
-      ])
-      if (seq !== loadSeq.current) return
+      const loaded = await loadBetweenWrites(
+        () => Promise.all([api.listCategories(), api.categoryOrder(), api.listItems()]),
+        () => seq === loadSeq.current,
+      )
+      if (!loaded || seq !== loadSeq.current) return
       if (dragging.current) {
         reloadAfterDrag.current = true
         return
       }
+      const [nextCategories, nextOrder, nextItems] = loaded
       setCategories(nextCategories)
       setCategoryOrder(nextOrder)
       setItems(nextItems)
@@ -147,7 +147,8 @@ export function Checklist({ token, onSignOut, onUnauthorized }: Props) {
   useEffect(() => {
     // oxlint-disable-next-line react/set-state-in-effect -- reload only sets state after its fetch resolves
     void reload()
-    // Agents change the list through MCP too, so catch up whenever the tab comes back.
+    // A background tab's socket can be dead without knowing it yet, and behind a proxy that doesn't pass WebSocket
+    // upgrades there is none, so catch up whenever the tab comes back too.
     const onVisible = () => {
       if (document.visibilityState !== 'visible') return
       void reload()
@@ -159,9 +160,9 @@ export function Checklist({ token, onSignOut, onUnauthorized }: Props) {
 
   useEffect(() => {
     const stop = new AbortController()
-    void followEvents(api, stop.signal, {
+    followEvents(api, stop.signal, {
       onPreview: (link, preview) => setPreviews((prev) => new Map(prev).set(link, preview)),
-      onReconnect: () => {
+      onCatchUp: () => {
         void reload()
         setCatchUps((n) => n + 1)
       },
@@ -606,7 +607,7 @@ export function Checklist({ token, onSignOut, onUnauthorized }: Props) {
       <header className="topbar">
         <span className="brand">
           <Logo />
-          <span className="brand-name">checkcheck</span>
+          <span className="brand-name">CheckCheck</span>
         </span>
         <div className="topbar-actions">
           <TopbarButton label="Connect phone" icon={<QrIcon />} onClick={() => setConnecting(true)} />

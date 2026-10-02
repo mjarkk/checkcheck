@@ -32,7 +32,7 @@ export function SignIn({ notice, onSignedIn }: Props) {
     <main className="signin">
       <form className="signin-card" onSubmit={submit} noValidate>
         <Logo />
-        <h1 className="signin-title">checkcheck</h1>
+        <h1 className="signin-title">CheckCheck</h1>
         <p className="signin-text">
           Sign in with the server's token: <code>CHECKCHECK_TOKEN</code>, or the <code>token</code> file in its data
           directory.

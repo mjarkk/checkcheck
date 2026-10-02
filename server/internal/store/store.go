@@ -119,11 +119,23 @@ var migrations = []string{
 	);`,
 	`ALTER TABLE items ADD COLUMN deleted_at TEXT;
 	CREATE INDEX items_deleted_at ON items(deleted_at);`,
+	// No foreign key on target_id: a key must outlive what it made, so a
+	// replay after a delete is a 404 rather than a second create.
+	`CREATE TABLE idempotency_keys (
+		kind TEXT NOT NULL,
+		key TEXT NOT NULL,
+		target_id INTEGER NOT NULL,
+		created_at TEXT NOT NULL,
+		PRIMARY KEY (kind, key)
+	);`,
 }
+
+const keyRetention = 30 * 24 * time.Hour
 
 type Store struct {
 	db        *sql.DB
 	onMissing func(link string)
+	onChange  func(ctx context.Context)
 }
 
 func Open(ctx context.Context, path string) (*Store, error) {
@@ -152,6 +164,20 @@ func (s *Store) Close() error {
 // be fetched. f must not block. Call it before the store is used concurrently.
 func (s *Store) OnMissingPreview(f func(link string)) {
 	s.onMissing = f
+}
+
+// OnChange sets f to be called once after every committed write that changes
+// what a list returns, with the ctx of the call that made it. Saving a
+// preview, purging and a create replayed by its key are not such writes. f
+// must not block. Call it before the store is used concurrently.
+func (s *Store) OnChange(f func(ctx context.Context)) {
+	s.onChange = f
+}
+
+func (s *Store) changed(ctx context.Context) {
+	if s.onChange != nil {
+		s.onChange(ctx)
+	}
 }
 
 func (s *Store) migrate(ctx context.Context) error {
@@ -193,6 +219,42 @@ func formatTime(t time.Time) string {
 // Deleted items whose deleted_at sorts before this are past restoring.
 func deletedCutoff() string {
 	return formatTime(time.Now().Add(-DeletedRetention))
+}
+
+func keyCutoff() string {
+	return formatTime(time.Now().Add(-keyRetention))
+}
+
+// Keys are per kind, so one key can name both an item and a category create.
+const (
+	itemKey     = "item"
+	categoryKey = "category"
+)
+
+// lookupKey returns the id that key made, if it made one within keyRetention.
+// The empty key never made anything.
+func lookupKey(ctx context.Context, tx *sql.Tx, kind, key string) (id int64, found bool, err error) {
+	if key == "" {
+		return 0, false, nil
+	}
+	err = tx.QueryRowContext(ctx,
+		"SELECT target_id FROM idempotency_keys WHERE kind = ? AND key = ? AND created_at >= ?",
+		kind, key, keyCutoff()).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, false, nil
+	}
+	return id, err == nil, err
+}
+
+func rememberKey(ctx context.Context, tx *sql.Tx, kind, key string, id int64) error {
+	if key == "" {
+		return nil
+	}
+	// REPLACE: an expired key stays stored until PurgeDeleted erases it.
+	_, err := tx.ExecContext(ctx,
+		"INSERT OR REPLACE INTO idempotency_keys (kind, key, target_id, created_at) VALUES (?, ?, ?, ?)",
+		kind, key, id, now())
+	return err
 }
 
 type scanner interface {
@@ -300,15 +362,31 @@ func (s *Store) GetCategory(ctx context.Context, id int64) (Category, error) {
 }
 
 func (s *Store) CreateCategory(ctx context.Context, name string) (Category, error) {
-	name, err := cleanText("name", name, maxNameLen)
-	if err != nil {
-		return Category{}, err
-	}
+	return s.CreateCategoryWithKey(ctx, "", name)
+}
+
+// CreateCategoryWithKey is CreateCategory, except that a key that already
+// made a category within keyRetention makes nothing: it returns that category
+// as it is now, whatever name says, or ErrNotFound once it is deleted. A
+// failed create doesn't use up the key.
+func (s *Store) CreateCategoryWithKey(ctx context.Context, key, name string) (Category, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return Category{}, err
 	}
 	defer tx.Rollback()
+	id, found, err := lookupKey(ctx, tx, categoryKey, key)
+	if err != nil {
+		return Category{}, err
+	}
+	if found {
+		c, err := scanCategory(tx.QueryRowContext(ctx, "SELECT "+categoryColumns+" FROM categories WHERE id = ?", id))
+		return c, categoryErr(err, id, "")
+	}
+	name, err = cleanText("name", name, maxNameLen)
+	if err != nil {
+		return Category{}, err
+	}
 	var last, uncategorized int64
 	if err := tx.QueryRowContext(ctx,
 		"SELECT COALESCE(MAX(position), 0), "+uncategorizedPosition+" FROM categories").Scan(&last, &uncategorized); err != nil {
@@ -328,7 +406,14 @@ func (s *Store) CreateCategory(ctx context.Context, name string) (Category, erro
 	if err != nil {
 		return Category{}, categoryErr(err, 0, name)
 	}
-	return c, tx.Commit()
+	if err := rememberKey(ctx, tx, categoryKey, key, c.ID); err != nil {
+		return Category{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return Category{}, err
+	}
+	s.changed(ctx)
+	return c, nil
 }
 
 func (s *Store) RenameCategory(ctx context.Context, id int64, name string) (Category, error) {
@@ -339,7 +424,11 @@ func (s *Store) RenameCategory(ctx context.Context, id int64, name string) (Cate
 	c, err := scanCategory(s.db.QueryRowContext(ctx,
 		"UPDATE categories SET name = ?, updated_at = ? WHERE id = ? RETURNING "+categoryColumns,
 		name, now(), id))
-	return c, categoryErr(err, id, name)
+	if err != nil {
+		return Category{}, categoryErr(err, id, name)
+	}
+	s.changed(ctx)
+	return c, nil
 }
 
 // DeleteCategory uncategorizes the category's items.
@@ -359,7 +448,11 @@ func (s *Store) DeleteCategory(ctx context.Context, id int64) (Category, error) 
 	if err != nil {
 		return Category{}, categoryErr(err, id, "")
 	}
-	return c, tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return Category{}, err
+	}
+	s.changed(ctx)
+	return c, nil
 }
 
 const (
@@ -438,7 +531,11 @@ func (s *Store) SetCategoryOrder(ctx context.Context, order []*int64) ([]*int64,
 			return nil, err
 		}
 	}
-	return order, tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	s.changed(ctx)
+	return order, nil
 }
 
 func (s *Store) ListItems(ctx context.Context) ([]Item, error) {
@@ -462,18 +559,50 @@ func (s *Store) ListItems(ctx context.Context) ([]Item, error) {
 }
 
 func (s *Store) CreateItem(ctx context.Context, title string, categoryID *int64) (Item, error) {
-	title, err := cleanText("title", title, maxTitleLen)
+	return s.CreateItemWithKey(ctx, "", title, categoryID)
+}
+
+// CreateItemWithKey is CreateItem, except that a key that already made an
+// item within keyRetention makes nothing: it returns that item as it is now,
+// whatever title and categoryID say, or ErrNotFound once it is deleted. A
+// failed create doesn't use up the key.
+func (s *Store) CreateItemWithKey(ctx context.Context, key, title string, categoryID *int64) (Item, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return Item{}, err
+	}
+	defer tx.Rollback()
+	id, found, err := lookupKey(ctx, tx, itemKey, key)
+	if err != nil {
+		return Item{}, err
+	}
+	if found {
+		it, err := scanItem(tx.QueryRowContext(ctx,
+			"SELECT "+itemColumns+" FROM items WHERE id = ? AND deleted_at IS NULL", id))
+		if err != nil {
+			return Item{}, itemErr(err, id, nil)
+		}
+		return s.withPreview(ctx, it)
+	}
+	title, err = cleanText("title", title, maxTitleLen)
 	if err != nil {
 		return Item{}, err
 	}
 	ts := now()
-	it, err := scanItem(s.db.QueryRowContext(ctx,
+	it, err := scanItem(tx.QueryRowContext(ctx,
 		`INSERT INTO items (title, category_id, position, created_at, updated_at)
 			VALUES (?, ?, (SELECT COALESCE(MAX(position), 0) + 1 FROM items), ?, ?) RETURNING `+itemColumns,
 		title, categoryID, ts, ts))
 	if err != nil {
 		return Item{}, itemErr(err, 0, categoryID)
 	}
+	if err := rememberKey(ctx, tx, itemKey, key, it.ID); err != nil {
+		return Item{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return Item{}, err
+	}
+	s.changed(ctx)
 	return s.withPreview(ctx, it)
 }
 
@@ -511,6 +640,7 @@ func (s *Store) UpdateItem(ctx context.Context, id int64, u ItemUpdate) (Item, e
 	if err := tx.Commit(); err != nil {
 		return Item{}, err
 	}
+	s.changed(ctx)
 	return s.withPreview(ctx, it)
 }
 
@@ -539,7 +669,11 @@ func moveItem(ctx context.Context, tx *sql.Tx, id int64, beforeID *int64) error 
 func (s *Store) DeleteItem(ctx context.Context, id int64) (Item, error) {
 	it, err := scanItem(s.db.QueryRowContext(ctx,
 		"UPDATE items SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL RETURNING "+itemColumns, now(), id))
-	return it, itemErr(err, id, nil)
+	if err != nil {
+		return Item{}, itemErr(err, id, nil)
+	}
+	s.changed(ctx)
+	return it, nil
 }
 
 // ListDeletedItems returns the items deleted within DeletedRetention, most
@@ -596,12 +730,16 @@ func (s *Store) RestoreItem(ctx context.Context, id int64) (Item, error) {
 	if err != nil {
 		return Item{}, itemErr(err, id, nil)
 	}
+	s.changed(ctx)
 	return s.withPreview(ctx, it)
 }
 
 // PurgeDeleted erases the items deleted longer than DeletedRetention ago and
-// returns how many there were.
+// returns how many there were. It also erases the expired idempotency keys.
 func (s *Store) PurgeDeleted(ctx context.Context) (int64, error) {
+	if _, err := s.db.ExecContext(ctx, "DELETE FROM idempotency_keys WHERE created_at < ?", keyCutoff()); err != nil {
+		return 0, err
+	}
 	res, err := s.db.ExecContext(ctx, "DELETE FROM items WHERE deleted_at < ?", deletedCutoff())
 	if err != nil {
 		return 0, err

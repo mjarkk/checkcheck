@@ -109,7 +109,7 @@ class _SetupScreenState extends State<SetupScreen> {
               child: Logo(size: 48),
             ),
             const SizedBox(height: 12),
-            Text('checkcheck', style: theme.textTheme.displaySmall),
+            Text('CheckCheck', style: theme.textTheme.displaySmall),
             const SizedBox(height: 16),
             Text.rich(
               const TextSpan(

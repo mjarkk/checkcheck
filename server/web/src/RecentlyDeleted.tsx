@@ -3,7 +3,7 @@ import { ApiError, type Api, type DeletedItem, type Item } from './api'
 import { groupByDay, putBack } from './deleted'
 import { ArrowBackIcon, RestoreFromTrashIcon } from './icons'
 import { captureScroll, layoutPass, motionRef } from './motion'
-import { markUnsaved } from './saving'
+import { loadBetweenWrites, markUnsaved } from './saving'
 
 type Props = {
   api: Api
@@ -34,8 +34,11 @@ export function RecentlyDeleted({ api, refresh, report, onBack, onRestored, onFa
   const load = useCallback(async () => {
     const seq = ++loadSeq.current
     try {
-      const next = await api.listDeletedItems()
-      if (seq !== loadSeq.current) return
+      const next = await loadBetweenWrites(
+        () => api.listDeletedItems(),
+        () => seq === loadSeq.current,
+      )
+      if (!next || seq !== loadSeq.current) return
       setItems(next)
       setNow(new Date())
       setLoadFailed(false)

@@ -809,3 +809,220 @@ func TestMigrationKeepsItemsAndFindsTheirLinks(t *testing.T) {
 		t.Errorf("after save: items = %+v, %v", items, err)
 	}
 }
+
+func TestCreateWithKey(t *testing.T) {
+	ctx := context.Background()
+	s := openTest(t)
+
+	milk, err := s.CreateItemWithKey(ctx, "k1", "Milk", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.UpdateItem(ctx, milk.ID, ItemUpdate{Checked: ptr(true)}); err != nil {
+		t.Fatal(err)
+	}
+	again, err := s.CreateItemWithKey(ctx, "k1", "", ptr(int64(999)))
+	if err != nil || again.ID != milk.ID || again.Title != "Milk" || !again.Checked {
+		t.Errorf("replay = %+v, %v; want item %d as it is now, whatever the body says", again, err, milk.ID)
+	}
+	if got := titles(t, s); got != "Milk" {
+		t.Errorf("items = %q, want the replay to create nothing", got)
+	}
+
+	cat, err := s.CreateCategoryWithKey(ctx, "k1", "Groceries")
+	if err != nil {
+		t.Fatalf("same key on the other kind: %v", err)
+	}
+	if again, err := s.CreateCategoryWithKey(ctx, "k1", "groceries"); err != nil || again.ID != cat.ID {
+		t.Errorf("category replay = %+v, %v; want category %d", again, err, cat.ID)
+	}
+	if got := categoryOrder(t, s); got != "Groceries,-" {
+		t.Errorf("category order = %q, want the replay to create nothing", got)
+	}
+
+	for _, fail := range []func() error{
+		func() error { _, err := s.CreateItemWithKey(ctx, "k2", " ", nil); return err },
+		func() error { _, err := s.CreateItemWithKey(ctx, "k2", "Eggs", ptr(int64(999))); return err },
+	} {
+		if err := fail(); !errors.Is(err, ErrInvalid) {
+			t.Errorf("invalid create: err = %v, want ErrInvalid", err)
+		}
+	}
+	if _, err := s.CreateCategoryWithKey(ctx, "k2", "GROCERIES"); !errors.Is(err, ErrConflict) {
+		t.Errorf("duplicate name: err = %v, want ErrConflict", err)
+	}
+	eggs, err := s.CreateItemWithKey(ctx, "k2", "Eggs", &cat.ID)
+	if err != nil || eggs.Title != "Eggs" {
+		t.Errorf("create after failed ones with the same key = %+v, %v; want Eggs created", eggs, err)
+	}
+	if _, err := s.CreateCategoryWithKey(ctx, "k2", "Hardware"); err != nil {
+		t.Errorf("category create after a failed one with the same key: %v", err)
+	}
+
+	if _, err := s.DeleteItem(ctx, milk.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateItemWithKey(ctx, "k1", "Milk", nil); !errors.Is(err, ErrNotFound) {
+		t.Errorf("replay of a deleted item: err = %v, want ErrNotFound", err)
+	}
+	if _, err := s.DeleteCategory(ctx, cat.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateCategoryWithKey(ctx, "k1", "Groceries"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("replay of a deleted category: err = %v, want ErrNotFound", err)
+	}
+	if got := titles(t, s); got != "Eggs" {
+		t.Errorf("items = %q, want no replay to have created anything", got)
+	}
+}
+
+func TestKeysExpire(t *testing.T) {
+	ctx := context.Background()
+	s := openTest(t)
+	first, err := s.CreateItemWithKey(ctx, "k", "a", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateItemWithKey(ctx, "fresh", "b", nil); err != nil {
+		t.Fatal(err)
+	}
+	expired := formatTime(time.Now().Add(-keyRetention - time.Minute))
+	if _, err := s.db.Exec("UPDATE idempotency_keys SET created_at = ? WHERE key = 'k'", expired); err != nil {
+		t.Fatal(err)
+	}
+	second, err := s.CreateItemWithKey(ctx, "k", "c", nil)
+	if err != nil || second.ID == first.ID {
+		t.Fatalf("create with an expired key = %+v, %v; want a new item", second, err)
+	}
+	if again, err := s.CreateItemWithKey(ctx, "k", "d", nil); err != nil || again.ID != second.ID {
+		t.Errorf("replay after reuse = %+v, %v; want item %d", again, err, second.ID)
+	}
+
+	if _, err := s.db.Exec("UPDATE idempotency_keys SET created_at = ? WHERE key = 'k'", expired); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.PurgeDeleted(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var keys []string
+	rows, err := s.db.Query("SELECT key FROM idempotency_keys")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var k string
+		rows.Scan(&k)
+		keys = append(keys, k)
+	}
+	if strings.Join(keys, ",") != "fresh" {
+		t.Errorf("keys after PurgeDeleted = %v, want only the unexpired one", keys)
+	}
+}
+
+func TestCreateWithKeyConcurrently(t *testing.T) {
+	ctx := context.Background()
+	s := openTest(t)
+	const n = 8
+	ids := make(chan int64, n)
+	errs := make(chan error, n)
+	for range n {
+		go func() {
+			it, err := s.CreateItemWithKey(ctx, "k", "Milk", nil)
+			ids <- it.ID
+			errs <- err
+		}()
+	}
+	seen := map[int64]bool{}
+	for range n {
+		if err := <-errs; err != nil {
+			t.Error(err)
+		}
+		seen[<-ids] = true
+	}
+	if len(seen) != 1 {
+		t.Errorf("concurrent creates with one key returned ids %v, want one", seen)
+	}
+	if got := titles(t, s); got != "Milk" {
+		t.Errorf("items = %q, want one", got)
+	}
+}
+
+type ctxTag struct{}
+
+func TestOnChangeFiresOncePerWrite(t *testing.T) {
+	s := openTest(t)
+	var tags []any
+	s.OnChange(func(ctx context.Context) { tags = append(tags, ctx.Value(ctxTag{})) })
+	step := 0
+	expect := func(what string, wantCalls int, err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatalf("%s: %v", what, err)
+		}
+		if len(tags) != wantCalls {
+			t.Errorf("%s: OnChange called %d times, want %d", what, len(tags), wantCalls)
+		}
+		for _, tag := range tags {
+			if tag != step {
+				t.Errorf("%s: OnChange got ctx tagged %v, want the call's ctx (%d)", what, tag, step)
+			}
+		}
+		tags = nil
+	}
+	ctx := func() context.Context {
+		step++
+		return context.WithValue(context.Background(), ctxTag{}, step)
+	}
+
+	c, err := s.CreateCategory(ctx(), "Groceries")
+	expect("CreateCategory", 1, err)
+	_, err = s.CreateCategoryWithKey(ctx(), "k", "Hardware")
+	expect("CreateCategoryWithKey", 1, err)
+	_, err = s.CreateCategoryWithKey(ctx(), "k", "Hardware")
+	expect("CreateCategoryWithKey replay", 0, err)
+	_, err = s.RenameCategory(ctx(), c.ID, "Food")
+	expect("RenameCategory", 1, err)
+	order, err := s.CategoryOrder(ctx())
+	expect("CategoryOrder", 0, err)
+	_, err = s.SetCategoryOrder(ctx(), order)
+	expect("SetCategoryOrder", 1, err)
+	it, err := s.CreateItem(ctx(), "Read https://example.com/post", nil)
+	expect("CreateItem", 1, err)
+	_, err = s.CreateItemWithKey(ctx(), "k", "Milk", nil)
+	expect("CreateItemWithKey", 1, err)
+	_, err = s.CreateItemWithKey(ctx(), "k", "Milk", nil)
+	expect("CreateItemWithKey replay", 0, err)
+	_, err = s.UpdateItem(ctx(), it.ID, ItemUpdate{Checked: ptr(true), SetBefore: true})
+	expect("UpdateItem", 1, err)
+	err = s.SavePreview(ctx(), "https://example.com/post", Preview{Title: "A post"})
+	expect("SavePreview", 0, err)
+	_, err = s.ListItems(ctx())
+	expect("ListItems", 0, err)
+	_, err = s.DeleteItem(ctx(), it.ID)
+	expect("DeleteItem", 1, err)
+	_, err = s.ListDeletedItems(ctx())
+	expect("ListDeletedItems", 0, err)
+	_, err = s.RestoreItem(ctx(), it.ID)
+	expect("RestoreItem", 1, err)
+	_, err = s.DeleteCategory(ctx(), c.ID)
+	expect("DeleteCategory", 1, err)
+	_, err = s.PurgeDeleted(ctx())
+	expect("PurgeDeleted", 0, err)
+
+	for what, fail := range map[string]func(context.Context) error{
+		"CreateCategory":   func(ctx context.Context) error { _, err := s.CreateCategory(ctx, "hardware"); return err },
+		"RenameCategory":   func(ctx context.Context) error { _, err := s.RenameCategory(ctx, c.ID, "x"); return err },
+		"DeleteCategory":   func(ctx context.Context) error { _, err := s.DeleteCategory(ctx, c.ID); return err },
+		"SetCategoryOrder": func(ctx context.Context) error { _, err := s.SetCategoryOrder(ctx, nil); return err },
+		"CreateItem":       func(ctx context.Context) error { _, err := s.CreateItem(ctx, "", nil); return err },
+		"UpdateItem":       func(ctx context.Context) error { _, err := s.UpdateItem(ctx, 999, ItemUpdate{}); return err },
+		"DeleteItem":       func(ctx context.Context) error { _, err := s.DeleteItem(ctx, 999); return err },
+		"RestoreItem":      func(ctx context.Context) error { _, err := s.RestoreItem(ctx, it.ID); return err },
+	} {
+		if err := fail(ctx()); err == nil {
+			t.Errorf("failing %s succeeded", what)
+		}
+		expect("failing "+what, 0, nil)
+	}
+}

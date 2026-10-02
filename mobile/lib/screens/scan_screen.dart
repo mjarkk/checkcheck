@@ -48,9 +48,9 @@ class _ScanScreenState extends State<ScanScreen> {
         errorBuilder: (context, error) => _CameraUnavailable(error),
         overlayBuilder: (context, constraints) => _ScanOverlay(
           hint: _sawForeignCode
-              ? "That isn't a checkcheck code. Use the QR code from the "
-                    'checkcheck web app.'
-              : 'Point the camera at the QR code in the checkcheck web app.',
+              ? "That isn't a CheckCheck code. Use the QR code from the "
+                    'CheckCheck web app.'
+              : 'Point the camera at the QR code in the CheckCheck web app.',
         ),
       ),
     );
@@ -115,7 +115,7 @@ class _CameraUnavailable extends StatelessWidget {
     final theme = Theme.of(context);
     final message = switch (error.errorCode) {
       MobileScannerErrorCode.permissionDenied =>
-        'checkcheck has no access to the camera. Allow it in Settings, or '
+        'CheckCheck has no access to the camera. Allow it in Settings, or '
             'enter the server URL and token by hand.',
       _ =>
         'No camera is available on this device. Enter the server URL and '

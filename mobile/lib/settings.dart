@@ -1,6 +1,8 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'home_widget.dart';
+
 class ServerSettings {
   const ServerSettings({required this.url, required this.token});
 
@@ -25,19 +27,28 @@ class DeviceSettingsStore implements SettingsStore {
   final _secure = const FlutterSecureStorage();
 
   @override
-  Future<({String? url, String? token})> load() async => (
-    url: await _prefs.getString(_urlKey),
-    token: await _secure.read(key: _tokenKey),
-  );
+  Future<({String? url, String? token})> load() async {
+    final url = await _prefs.getString(_urlKey);
+    final token = await _secure.read(key: _tokenKey);
+    // Also gives connections made before the widget existed their copy.
+    if (url != null && token != null) {
+      await HomeWidget.setConnection(server: url, token: token);
+    }
+    return (url: url, token: token);
+  }
 
   @override
   Future<void> save(ServerSettings settings) async {
     await _secure.write(key: _tokenKey, value: settings.token);
     await _prefs.setString(_urlKey, settings.url);
+    await HomeWidget.setConnection(server: settings.url, token: settings.token);
   }
 
   @override
-  Future<void> clearToken() => _secure.delete(key: _tokenKey);
+  Future<void> clearToken() async {
+    await _secure.delete(key: _tokenKey);
+    await HomeWidget.clearConnection();
+  }
 }
 
 /// Trims, assumes https:// when no scheme was typed, and drops trailing

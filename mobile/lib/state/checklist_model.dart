@@ -11,6 +11,9 @@ import 'sections.dart';
 
 const _maxRetrySeconds = 30;
 
+/// Move all to… sends a `changed` per item; this refreshes once after them.
+const _changedQuiet = Duration(milliseconds: 300);
+
 /// Every change shows at once and joins a queue that is saved to [cache]
 /// together with the last server state, and sent in order in the background,
 /// retrying with backoff while the server can't be reached. A fetch waits for
@@ -102,8 +105,9 @@ class ChecklistModel extends ChangeNotifier {
 
   /// Completed by [stopEvents]; null while not following.
   Completer<void>? _eventsStop;
-  StreamSubscription<PreviewEvent>? _events;
+  StreamSubscription<ServerEvent>? _events;
   Timer? _eventsRetry;
+  Timer? _changedRefresh;
 
   /// What the events loop waits on: the stream ending or the retry delay.
   Completer<void>? _eventsWait;
@@ -178,10 +182,11 @@ class ChecklistModel extends ChangeNotifier {
     return fetched.future;
   }
 
-  /// Follows the server's event stream (link previews) until [stopEvents],
-  /// reconnecting with backoff; every reconnect refreshes, since events
-  /// aren't replayed. A 401 calls [onUnauthorized] and stops. Calling it
-  /// again while following does nothing.
+  /// Follows the server's live updates until [stopEvents], reconnecting with
+  /// backoff. Every `ready` refreshes, the first one too, since events
+  /// aren't replayed; a change made elsewhere refreshes once the `changed`
+  /// events stop coming. A rejected token calls [onUnauthorized] and stops.
+  /// Calling it again while following does nothing.
   void followEvents() {
     if (_eventsStop != null || _disposed) return;
     _followEvents(_eventsStop = Completer());
@@ -194,26 +199,32 @@ class ChecklistModel extends ChangeNotifier {
     _eventsStop = null;
     stop.complete();
     _eventsRetry?.cancel();
+    _changedRefresh?.cancel();
     _events?.cancel();
     if (_eventsWait case final wait? when !wait.isCompleted) wait.complete();
   }
 
   Future<void> _followEvents(Completer<void> stop) async {
     var retrySeconds = 1;
-    var connected = false;
     while (!stop.isCompleted) {
       try {
-        final events = await api.events(abort: stop.future);
-        if (stop.isCompleted) {
-          events.listen(null).cancel();
-          return;
-        }
-        if (connected) refresh().ignore();
-        connected = true;
-        retrySeconds = 1;
         await _waitForEvents(
-          (done) => _events = events.listen(
-            _receivePreview,
+          (done) => _events = api.events().listen(
+            (event) {
+              switch (event) {
+                case ReadyEvent():
+                  retrySeconds = 1;
+                  refresh().ignore();
+                case ChangedEvent():
+                  _changedRefresh?.cancel();
+                  _changedRefresh = Timer(
+                    _changedQuiet,
+                    () => refresh().ignore(),
+                  );
+                case PreviewEvent():
+                  _receivePreview(event);
+              }
+            },
             onError: (Object error) {
               if (!done.isCompleted) done.completeError(error);
             },
@@ -304,6 +315,7 @@ class ChecklistModel extends ChangeNotifier {
         title: title,
         categoryId: _serverIds[categoryId] ?? categoryId,
         createdAt: DateTime.now().toUtc(),
+        key: randomKey(),
       ),
     );
     return id;
@@ -331,6 +343,7 @@ class ChecklistModel extends ChangeNotifier {
           title: title,
           categoryId: category,
           createdAt: createdAt,
+          key: randomKey(),
         ),
       );
       final placed = UpdateItem(
@@ -422,7 +435,14 @@ class ChecklistModel extends ChangeNotifier {
   int addCategory(String name) {
     _checkUnique(name);
     final id = _nextTempId--;
-    _enqueue(CreateCategory(id, name: name, createdAt: DateTime.now().toUtc()));
+    _enqueue(
+      CreateCategory(
+        id,
+        name: name,
+        createdAt: DateTime.now().toUtc(),
+        key: randomKey(),
+      ),
+    );
     return id;
   }
 
@@ -534,7 +554,11 @@ class ChecklistModel extends ChangeNotifier {
   Future<void> _send(Change change) async {
     switch (change) {
       case CreateItem(:final target, :final title, :final categoryId):
-        final item = await api.createItem(title, categoryId: categoryId);
+        final item = await api.createItem(
+          title,
+          categoryId: categoryId,
+          key: change.key,
+        );
         _settle(change);
         _remap(target, item.id);
         _addPreviewsOf(_previews, [item]);
@@ -571,7 +595,7 @@ class ChecklistModel extends ChangeNotifier {
           ]),
         );
       case CreateCategory(:final target, :final name):
-        final category = await _createCategory(name);
+        final category = await _createCategory(name, change.key);
         _settle(change);
         _remap(target, category.id);
         _updateServer(
@@ -598,9 +622,9 @@ class ChecklistModel extends ChangeNotifier {
     }
   }
 
-  Future<Category> _createCategory(String name) async {
+  Future<Category> _createCategory(String name, String? key) async {
     try {
-      return await api.createCategory(name);
+      return await api.createCategory(name, key: key);
     } on ConflictException {
       // Made elsewhere while this one waited in the queue: use that one.
       final lower = name.toLowerCase();
@@ -663,11 +687,13 @@ class ChecklistModel extends ChangeNotifier {
   /// [change] without the next reference that may be what the server
   /// rejected: the item it moves before, then the category.
   Change? _withoutReferences(Change change) => switch (change) {
+    // The same key: a 400 stored nothing under it.
     CreateItem(categoryId: _?) => CreateItem(
       change.target,
       title: change.title,
       categoryId: null,
       createdAt: change.createdAt,
+      key: change.key,
     ),
     UpdateItem(before: _?) => change.without(before: true),
     UpdateItem(category: _?) => change.without(category: true),

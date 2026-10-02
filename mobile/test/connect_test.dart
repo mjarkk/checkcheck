@@ -125,7 +125,7 @@ void main() {
       );
       expect(
         await failure(MockClient((_) async => http.Response('<html>', 200))),
-        "That doesn't look like a checkcheck server",
+        "That doesn't look like a CheckCheck server",
       );
       expect(
         await failure(FakeServer(token: 'dev').client, token: 'wrong'),

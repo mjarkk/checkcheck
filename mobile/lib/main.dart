@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
 import 'api/api_client.dart';
+import 'home_widget.dart';
 import 'screens/checklist_screen.dart';
 import 'screens/setup_screen.dart';
 import 'settings.dart';
@@ -31,11 +32,15 @@ class CheckcheckApp extends StatefulWidget {
     required this.store,
     required this.cache,
     required this.httpClient,
+    this.connectWebSocket,
   });
 
   final SettingsStore store;
   final ChecklistCache cache;
   final http.Client httpClient;
+
+  /// Null opens real sockets.
+  final WebSocketConnect? connectWebSocket;
 
   @override
   State<CheckcheckApp> createState() => _CheckcheckAppState();
@@ -47,6 +52,7 @@ class _CheckcheckAppState extends State<CheckcheckApp> {
   bool _loading = true;
   String? _lastUrl;
   ChecklistModel? _model;
+  HomeWidgetReloader? _widgetReloader;
 
   @override
   void initState() {
@@ -56,8 +62,14 @@ class _CheckcheckAppState extends State<CheckcheckApp> {
 
   @override
   void dispose() {
+    _widgetReloader?.dispose();
     _model?.dispose();
     super.dispose();
+  }
+
+  void _attachWidgetReloader(ChecklistModel? model) {
+    _widgetReloader?.dispose();
+    _widgetReloader = model == null ? null : HomeWidgetReloader(model);
   }
 
   Future<void> _load() async {
@@ -80,6 +92,7 @@ class _CheckcheckAppState extends State<CheckcheckApp> {
       _lastUrl = stored.url;
       _model = model;
     });
+    _attachWidgetReloader(model);
   }
 
   Future<ChecklistModel> _openModel(ServerSettings settings) =>
@@ -88,6 +101,7 @@ class _CheckcheckAppState extends State<CheckcheckApp> {
           baseUrl: settings.url,
           token: settings.token,
           httpClient: widget.httpClient,
+          connectWebSocket: widget.connectWebSocket,
         ),
         cache: widget.cache,
         onUnauthorized: () =>
@@ -104,6 +118,7 @@ class _CheckcheckAppState extends State<CheckcheckApp> {
       _lastUrl = settings.url;
       _model = model;
     });
+    _attachWidgetReloader(model);
   }
 
   /// [forgetChecklist] deletes the offline copy; otherwise it is kept, with
@@ -113,6 +128,7 @@ class _CheckcheckAppState extends State<CheckcheckApp> {
     if (model == null) return;
     _navigatorKey.currentState?.popUntil((route) => route.isFirst);
     setState(() => _model = null);
+    _attachWidgetReloader(null);
     // Disposed after the frame that unmounts the screens listening to it, and
     // before the clear, so no save can land after it.
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -131,7 +147,7 @@ class _CheckcheckAppState extends State<CheckcheckApp> {
   Widget build(BuildContext context) {
     final model = _model;
     return MaterialApp(
-      title: 'checkcheck',
+      title: 'CheckCheck',
       debugShowCheckedModeBanner: false,
       navigatorKey: _navigatorKey,
       scaffoldMessengerKey: _messengerKey,

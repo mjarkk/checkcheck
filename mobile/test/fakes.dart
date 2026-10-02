@@ -6,6 +6,10 @@ import 'package:checkcheck/settings.dart';
 import 'package:checkcheck/state/checklist_cache.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:web_socket/testing.dart';
+import 'package:web_socket/web_socket.dart';
+import 'package:web_socket_channel/adapter_web_socket_channel.dart';
+import 'package:web_socket_channel/web_socket_channel.dart';
 
 /// In-memory implementation of the /API.md contract.
 class FakeServer {
@@ -33,33 +37,42 @@ class FakeServer {
   /// What the server found per link.
   final previews = <String, Map<String, Object?>>{};
 
-  /// When set, the next authorized request answers with this status. Not
-  /// `GET /api/events`, which a following model opens at any time.
+  /// When set, the next authorized request answers with this status.
   int? failNextWith;
 
   /// While set, requests it gives a status for answer with that status,
   /// like [failNextWith].
   int? Function(http.Request request)? failWhen;
 
-  /// While set, `GET /api/events` answers with this status.
-  int? failEventsWith;
+  /// When true, the next request is handled but its response is lost, as
+  /// in a timeout.
+  bool loseNextResponse = false;
 
-  /// While true, requests fail as if the network were down. Open event
-  /// streams stay open until [closeEvents].
+  /// While true, opening an event socket fails, as through a proxy that
+  /// doesn't pass WebSocket upgrades.
+  bool refuseEvents = false;
+
+  /// While true, requests fail as if the network were down, and so does
+  /// opening an event socket. Open ones stay open until [closeEvents].
   bool offline = false;
 
-  /// While set, requests wait for it before they are handled; not
-  /// `GET /api/events`.
+  /// While set, requests wait for it before they are handled.
   Completer<void>? gate;
 
   late final http.Client client = MockClient.streaming(_receive);
 
+  /// How many times a client tried to open an event socket.
+  int eventConnects = 0;
+
   var _nextId = 1;
   final _epoch = DateTime.utc(2026, 10, 1, 12);
-  final _eventStreams = <StreamController<List<int>>>{};
+  final _eventSockets = <WebSocket>{};
 
-  /// How many event streams are open.
-  int get eventClients => _eventStreams.length;
+  /// What each `Idempotency-Key` created, by path and key.
+  final _created = <(String, String), int>{};
+
+  /// How many event sockets are open and signed in.
+  int get eventClients => _eventSockets.length;
 
   Map<String, Object?> addCategory(String name) {
     final order = _order();
@@ -119,30 +132,71 @@ class FakeServer {
     deleted.insert(index < 0 ? deleted.length : index, item);
   }
 
-  /// Stores [preview] for [link] and sends it to every open event stream.
+  /// Stores [preview] for [link] and sends it to every open event socket.
   void pushPreview(String link, Map<String, Object?> preview) {
     previews[link] = preview;
-    sendEvent(
-      'event: preview\n'
-      'data: ${jsonEncode({'link': link, 'preview': preview})}\n\n',
-    );
+    sendEvent({'type': 'preview', 'link': link, 'preview': preview});
   }
 
-  /// Writes [text] as is to every open event stream.
-  void sendEvent(String text) {
-    for (final stream in _eventStreams) {
-      stream.add(utf8.encode(text));
+  /// Sends [message] to every open event socket.
+  void sendEvent(Map<String, Object?> message) {
+    for (final socket in _eventSockets) {
+      _sendTo(socket, message);
     }
   }
 
-  /// Ends every open event stream, as a restarting server would.
+  /// Closes every open event socket, as a restarting server would (the fake
+  /// sockets take only 1000 and 3000–4999, not its 1001).
   void closeEvents() {
-    final streams = [..._eventStreams];
-    _eventStreams.clear();
-    for (final stream in streams) {
-      stream.close();
+    final sockets = [..._eventSockets];
+    _eventSockets.clear();
+    for (final socket in sockets) {
+      _close(socket, 1000);
     }
   }
+
+  /// Opens `GET /api/events` on this server; for `ApiClient`'s
+  /// `connectWebSocket`.
+  WebSocketChannel connect(Uri url) {
+    eventConnects++;
+    if (offline || refuseEvents || url.path != '/api/events') {
+      return AdapterWebSocketChannel(
+        Future.error(WebSocketException('connection refused')),
+      );
+    }
+    final (client, socket) = fakes();
+    var signedIn = false;
+    socket.events.listen((event) {
+      if (event is CloseReceived) {
+        _eventSockets.remove(socket);
+      } else if (event case TextDataReceived(:final text) when !signedIn) {
+        if (jsonDecode(text) case {
+          'type': 'auth',
+          'token': final String token,
+        } when token == this.token) {
+          signedIn = true;
+          _eventSockets.add(socket);
+          _sendTo(socket, {'type': 'ready'});
+        } else {
+          _close(socket, 4401);
+        }
+      }
+    });
+    return AdapterWebSocketChannel(client);
+  }
+
+  // A socket the client just closed is closed here before its
+  // CloseReceived arrives.
+  void _sendTo(WebSocket socket, Map<String, Object?> message) {
+    try {
+      socket.sendText(jsonEncode(message));
+    } on WebSocketConnectionClosed {
+      _eventSockets.remove(socket);
+    }
+  }
+
+  // Fails, asynchronously, when the client closed it first.
+  void _close(WebSocket socket, int code) => socket.close(code).ignore();
 
   Map<String, String> _timestamps() {
     final at = _epoch.add(Duration(seconds: _nextId++)).toIso8601String();
@@ -188,43 +242,26 @@ class FakeServer {
       ..headers.addAll(base.headers)
       ..bodyBytes = bytes;
     requests.add(request);
-    if (request.url.path == '/api/events') return _events(base);
+    final key = request.headers['Idempotency-Key'];
+    final replay = key != null && _created.containsKey((request.url.path, key));
     final response = await _handle(request);
+    if (request.method != 'GET' &&
+        response.statusCode >= 200 &&
+        response.statusCode < 300 &&
+        !replay) {
+      sendEvent({
+        'type': 'changed',
+        'client': ?request.headers['X-Checkcheck-Client'],
+      });
+    }
+    if (loseNextResponse) {
+      loseNextResponse = false;
+      throw http.ClientException('connection reset');
+    }
     return http.StreamedResponse(
       http.ByteStream.fromBytes(response.bodyBytes),
       response.statusCode,
       headers: response.headers,
-    );
-  }
-
-  http.StreamedResponse _events(http.BaseRequest request) {
-    final status = request.headers['Authorization'] != 'Bearer $token'
-        ? 401
-        : failEventsWith;
-    if (status != null) {
-      final error = _json(status, {'error': 'failure $status'});
-      return http.StreamedResponse(
-        http.ByteStream.fromBytes(error.bodyBytes),
-        status,
-        headers: error.headers,
-      );
-    }
-    final stream = StreamController<List<int>>();
-    stream.onCancel = () => _eventStreams.remove(stream);
-    _eventStreams.add(stream);
-    // MockClient leaves aborting to the handler; IOClient does it like this.
-    if (request case http.Abortable(:final abortTrigger?)) {
-      abortTrigger.whenComplete(() {
-        if (!_eventStreams.remove(stream)) return;
-        stream
-          ..addError(http.RequestAbortedException(request.url))
-          ..close();
-      });
-    }
-    return http.StreamedResponse(
-      stream.stream,
-      200,
-      headers: {'content-type': 'text/event-stream'},
     );
   }
 
@@ -241,6 +278,12 @@ class FakeServer {
     }
     if (failWhen?.call(request) case final status?) {
       return _json(status, {'error': 'failure $status'});
+    }
+    final idempotencyKey = request.headers['Idempotency-Key'];
+    if (request.method == 'POST' && idempotencyKey != null) {
+      if (_created[(request.url.path, idempotencyKey)] case final id?) {
+        return _replay(segments[1], id);
+      }
     }
     final body = request.body.isEmpty ? null : jsonDecode(request.body) as Map;
     if (request.url.path == '/api/categories/order') {
@@ -299,7 +342,11 @@ class FakeServer {
         )) {
           return _json(409, {'error': 'category already exists'});
         }
-        return _json(201, addCategory(name));
+        final category = addCategory(name);
+        if (idempotencyKey != null) {
+          _created[(request.url.path, idempotencyKey)] = category['id'] as int;
+        }
+        return _json(201, category);
       case ('PATCH', 'categories', _):
         existing!['name'] = body!['name'];
         return _json(200, existing);
@@ -316,6 +363,9 @@ class FakeServer {
           body!['title'] as String,
           categoryId: body['category_id'] as int?,
         );
+        if (idempotencyKey != null) {
+          _created[(request.url.path, idempotencyKey)] = item['id'] as int;
+        }
         return _json(201, _itemJson(item));
       case ('PATCH', 'items', _):
         for (final key in ['title', 'checked', 'category_id']) {
@@ -337,6 +387,14 @@ class FakeServer {
         return http.Response('', 204);
     }
     return _json(404, {'error': 'no route'});
+  }
+
+  /// What a create with a known key answers: what it made, as it is now.
+  http.Response _replay(String resource, int id) {
+    final list = resource == 'categories' ? categories : items;
+    final made = list.where((entry) => entry['id'] == id).firstOrNull;
+    if (made == null) return _json(404, {'error': 'not found'});
+    return _json(201, resource == 'items' ? _itemJson(made) : made);
   }
 
   http.Response _restore(int id) {

@@ -56,7 +56,7 @@ export function ConnectPhone({ onClose }: Props) {
           <CloseIcon />
         </button>
       </div>
-      <p className="dialog-text">Scan this code with the checkcheck app on your phone.</p>
+      <p className="dialog-text">Scan this code with the CheckCheck app on your phone.</p>
 
       <TextField
         id="connect-server"

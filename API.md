@@ -1,12 +1,14 @@
-# checkcheck API
+# CheckCheck API
 
-Single-user. Every endpoint except `GET /api/health` requires
+Single-user. Every endpoint except `GET /api/health` and the `GET /api/events` WebSocket (which signs in with its first message, see Live updates) requires
 
 ```
 Authorization: Bearer <token>
 ```
 
 The token is `CHECKCHECK_TOKEN`, or, when that is unset, the one the server generated on first start and stored in `<data dir>/token`.
+
+Clients send `X-Checkcheck-Client: <client id>` on every `/api` request, with a random id they make once per page load or app launch (at most 64 characters; a longer one is ignored). The server only uses it to say in a `changed` event who made the change.
 
 All bodies are JSON. Errors are `{"error": "<message>"}` with status `400` (invalid input), `401` (missing/wrong token), `404` (unknown id), `409` (duplicate category name) or `500`.
 
@@ -50,7 +52,9 @@ All bodies are JSON. Errors are `{"error": "<message>"}` with status `400` (inva
 | DELETE | `/api/items/{id}` | – | `204`; kept 30 days in Recently deleted |
 | GET | `/api/items/deleted` | – | `200 [DeletedItem]`, most recently deleted first |
 | POST | `/api/items/{id}/restore` | – | `200 Item` (uncategorized, at the end of the list order) |
-| GET | `/api/events` | – | `200 text/event-stream` (see Link previews) |
+| GET | `/api/events` | – | `101` WebSocket (see Live updates) |
+
+`POST /api/categories` and `POST /api/items` also take an `Idempotency-Key` header (see Retrying a create).
 
 In `PATCH /api/items/{id}`, an omitted field is left unchanged; `"category_id": null` removes the category. A `category_id` that does not exist is `400`.
 
@@ -74,18 +78,44 @@ The list order is one order over all items; clients show each category's (and th
 
 Whenever a create, update or list returns an item whose `link` has no result yet, the server fetches it in the background; the response never waits for it. The fetch is a `GET` with a 10 s timeout, at most 5 redirects, and at most 2 MiB read from an HTML response. It takes the `og:` tags (`og:title`, `og:description`, `og:image`/`og:image:secure_url`/`og:image:url`, `og:site_name`), falling back to `twitter:` tags, `<title>` and `<meta name="description">`, and the icon from `<link rel="icon">`/`apple-touch-icon`, else `/favicon.ico`. Relative URLs resolve against the final URL. Results, "nothing found" included, are kept per URL, so the same link is fetched once. A fetch that fails (network error, timeout, non-2xx, not HTML) is retried no sooner than 10 minutes later. Hosts that resolve to loopback, private, link-local or other non-public addresses are never fetched.
 
-`GET /api/events` is a Server-Sent Events stream (`text/event-stream`). It takes the bearer token in the header like every other `/api` call, so browsers read it with `fetch` rather than `EventSource`. When a fetch finds a preview, every connected client gets:
+When a fetch finds a preview, every connected client gets a `preview` event (see Live updates); a fetch that finds nothing sends none. Previews belong to the URL, not an item: a client shows it on every item whose `link` equals `link`, also when the event arrives before the response that gave that item its link.
 
-```
-event: preview
-data: {"link":"https://example.com/post","preview":{"title":"A post","site_name":"Example"}}
+## Retrying a create
+
+`POST /api/items` and `POST /api/categories` take an optional `Idempotency-Key: <key>` header, 1 to 100 characters (otherwise `400`), so a client can resend a create whose response it never got without making it twice. The app makes one random key per create and keeps it with the queued change, so retries and restarts resend the same key.
+
+- The first request with a key creates as usual and remembers the key together with what it made.
+- A later request to the same endpoint with that key creates nothing and answers `201` with that item or category as it is now, whatever its body says, or `404` when it has been deleted since (Recently deleted included). It sends no `changed` event.
+- A request that fails remembers nothing, so it can be resent with the same key, also with a different body.
+- Two requests with the same key at the same time make one item: the second waits for the first and answers like a later request.
+- Keys are per endpoint (the same key on both names two creates) and are remembered for 30 days.
+
+## Live updates
+
+`GET /api/events` is a WebSocket of JSON text messages. Browsers can't set headers on a WebSocket, so it signs in with its first message instead, which must arrive within 10 s:
+
+```json
+{"type":"auth","token":"<token>","client":"<client id>"}
 ```
 
-A fetch that finds nothing sends no event. Previews belong to the URL, not an item: a client shows it on every item whose `link` equals `link`, also when the event arrives before the response that gave that item its link. The stream sends a `: ping` comment line every 25 s to keep proxies from closing it. Events are not replayed, so a client that reconnects reloads the list; a client that falls behind is disconnected.
+`client` is optional and is the client's `X-Checkcheck-Client` id. The server answers `{"type":"ready"}` once it is subscribed, closes with code `4401` when the token is wrong, and with `1008` when the first message isn't a valid `auth` or doesn't arrive in time. The client sends nothing after `auth`; anything it does send closes the socket with `1008`.
+
+The server then sends:
+
+- `{"type":"ready"}`: from now on, every event reaches this socket. Events are never replayed, so a client reloads everything after every `ready`, the first one included: a change made between its last load and the subscription would otherwise go unseen.
+- `{"type":"changed","client":"<client id>"}`: something a list endpoint returns changed: an item, a category, the category order or Recently deleted, through the REST API or MCP. A link preview being saved is a `preview` event, not a `changed`. The event has no details; the client reloads. `client` is the `X-Checkcheck-Client` of the request that made the change and is left out when there was none (MCP). A client ignores a `changed` with its own id, as it already has that response. Each write sends one, so **Move all to…** sends one per item: clients reload once no `changed` has come for 300 ms.
+- `{"type":"preview","link":"https://example.com/post","preview":{"title":"A post","site_name":"Example"}}`: see Link previews.
+- `{"type":"ping"}` every 15 s, so proxies keep an idle socket open and clients can tell a dead one: a client that has heard nothing for 40 s closes the socket and reconnects. A phone that moves from Wi-Fi to mobile data is the usual case.
+
+A client that falls behind is disconnected, and the server closes every socket with `1001` when it shuts down. On any close but `4401`, or a connection that fails, the client reconnects after 1 s, doubling up to 30 s, back to 1 s after a `ready`. A `4401` signs the client out.
+
+A reload must not overwrite the client's own writes with an older state: when one of its writes was in flight while the reload's requests ran, the web app drops that reload and runs it again once its writes are done. The app's fetch already waits for its queue of changes.
+
+Behind a reverse proxy, `/api/events` needs WebSocket upgrades passed through (nginx: `proxy_http_version 1.1`, `proxy_set_header Upgrade $http_upgrade` and `proxy_set_header Connection "upgrade"`). Without them the clients still work, but only catch up when they come back to the foreground.
 
 ## MCP
 
-Streamable HTTP at exactly `/mcp` (no trailing slash), same bearer token. For clients that can't send headers, such as Claude's custom connectors (claude.ai, Claude Desktop and the Claude mobile app) or ChatGPT, the same server is also at `/mcp/<percent-encoded token>` with no `Authorization` header. A wrong token there is `401` too. The token then ends up in URLs (and so in logs), so the header form is preferred where a client supports it. `/api` only accepts the header. Tools:
+Streamable HTTP at exactly `/mcp` (no trailing slash), same bearer token. For clients that can't send headers, such as Claude's custom connectors (claude.ai, Claude Desktop and the Claude mobile app) or ChatGPT, the same server is also at `/mcp/<percent-encoded token>` with no `Authorization` header. A wrong token there is `401` too. The token then ends up in URLs (and so in logs), so the header form is preferred where a client supports it. `/api` only accepts the header, apart from the WebSocket's `auth` message. Tools:
 
 `list_categories`, `create_category`, `rename_category`, `delete_category`, `list_items` (in list order; optional `category_id` filter), `add_item`, `set_item_checked`, `rename_item`, `move_item` (omitted/null `category_id` = uncategorized), `delete_item` (into Recently deleted, like the REST call).
 
@@ -113,7 +143,7 @@ The webapp's **Connect AI** dialog (web only) gives these steps with the server 
 The webapp and the mobile app both follow these. Where the web differs between pointer and touch devices, the app follows touch.
 
 - One page, no filters. Under the top bar a summary: `N to do · M done`.
-- The top bar is the logo and **checkcheck** wordmark, then **Connect phone**, **Connect AI** (web only) and **Sign out** (the app's **Disconnect**, which asks first because it also deletes the offline copy). Narrower than 40rem they are icon buttons; narrower than about 340px the wordmark is hidden too, so the icons stay on screen.
+- The top bar is the logo and **CheckCheck** wordmark, then **Connect phone**, **Connect AI** (web only) and **Sign out** (the app's **Disconnect**, which asks first because it also deletes the offline copy). Narrower than 40rem they are icon buttons; narrower than 352px the wordmark is hidden too, so the icons stay on screen.
 - One section per category, Uncategorized included, in the category order and nowhere else: a section never moves because it gained or lost items, only when the order is changed in the categories dialog. Empty sections still show, so they can be typed into. With no categories at all there is a single section without a heading.
 - A section is its unchecked items, an **Add item** line, then a **Done** sub-list of its checked items (dimmed, not struck through), each in list order. The Done sub-list is hidden while empty, except during a drag.
 - A section heading and a Done heading end in a ⋯ button in a darker purple than the headings, centred over the rows' drag handles, while they have items; it opens a menu. The section's menu has **Mark all as done** (disabled while nothing is open), **Move all to…** (only while there are categories) and **Delete all**, which deletes the whole section, Done included. The Done menu has **Unmark all as done** and **Delete all**. A Delete all that includes items not done yet first asks for confirmation and says how many aren't done; one of only done items doesn't ask. With no categories, the single section’s ⋯ sits at the right end of the summary line. The buttons hide during a drag.
@@ -129,6 +159,15 @@ The webapp and the mobile app both follow these. Where the web differs between p
 - Deleting a category asks for confirmation and says its items become uncategorized.
 - **Recently deleted** is a page of its own under the same top bar: on the web at `/deleted`, so browser back and reload work; in the app a pushed screen, so the iOS back swipe works. It starts with a head line: a back button, then the title **Recently deleted**. Under it, where the summary goes on the main page, `Deleted items are kept for 30 days`. Then the deleted items grouped by the local calendar day they were deleted on, newest day first, each group headed `Today`, `Yesterday` or the date as `Monday 28 September` (`Monday 28 September 2025` when it isn't this year), in English on both clients. In a group the rows keep the server's order. A row is the title, read-only and wrapping, dimmed while checked like the Done list, and a restore button at the right end where the main rows have their handle. Restoring springs the row out like a deletion, the group heading with its last row, and the item is on the main page in Uncategorized (the one section, without categories) at once, at the end of its open or Done list. With nothing deleted the page says `Nothing deleted in the last 30 days`. Icons (Material, outlined): `auto_delete` on the Recently deleted button, `arrow_back` for back, `restore_from_trash` on the rows.
 - The app's offline copy includes the deleted items: the page shows at once, an item deleted on the phone is on it before the server hears about it, and restoring is a change like any other (shown at once, queued, replayed). An item created and deleted before it reached the server never existed there, so it isn't kept.
+
+## Home-screen widget (iOS 17+, app only)
+
+- One widget, **CheckCheck**, in the small, medium and large sizes. Editing it offers **List**: **All lists** (the default) or one section, Uncategorized included, offered in the category order. A list that has since been deleted shows as all lists.
+- It talks to the server itself, not through the app's offline copy, so ticks made on it need a connection. It signs in with a copy of the app's server URL and token in a keychain item shared through the app group `group.nl.mkopenga.checkcheck`; the app writes the copy on connect and on every start, and deletes it on Disconnect. It loads `GET /api/categories`, `GET /api/categories/order` and `GET /api/items`, and keeps its last load in the app group, so while the server can't be reached it shows the last list it saw.
+- It looks like the app's main page scaled down, so that more items fit: the `surface` background with 12px margins (in place of iOS's own content margins) and no head line, logo or summary. It shows the open items only, in list order, as the app's rows (`surface-container`, 2px apart, 10px outer and 4px inner corners) but compact: 26px high, a 16px checkbox, then the title in 14px type on one line, cut off with an ellipsis. With all lists and categories, each section that has open items gets its heading over its rows (the app's section heading at 12px), in the category order; sections without open items are left out. One list gets its own name as that heading. Rows that don't fit are left out, and a last line says `+N more`. With nothing open: the logo and `Nothing to do`.
+- Tapping a checkbox sends `PATCH /api/items/{id}` with `{"checked": true}`. Once that succeeds, the box springs into the checked circle and the title dims like a Done row; a second later the row springs out and the rows below move up. When it fails (no connection, server down) the row stays as it was. Tapping anywhere else opens the app.
+- Not connected: the logo and `Open CheckCheck to connect`. Server unreachable with no kept list: the logo and `Couldn't load your checklist`.
+- It reloads every 15 minutes (iOS may wait longer), after a tick, and when the app has sent its changes and loaded the list.
 
 ## Connect-a-phone QR code
 
