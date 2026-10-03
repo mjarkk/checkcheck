@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useState, type ChangeEvent, type FormEvent } from 'react'
 import { ApiError, NetworkError, createApi, errorText } from './api'
 import { Logo } from './icons'
 import { TextField } from './TextField'
@@ -13,9 +13,8 @@ export function SignIn({ notice, onSignedIn }: Props) {
   const [error, setError] = useState(notice)
   const [busy, setBusy] = useState(false)
 
-  async function submit(e: FormEvent) {
-    e.preventDefault()
-    const candidate = token.trim()
+  async function signIn(value: string) {
+    const candidate = value.trim()
     if (!candidate || busy) return
     setBusy(true)
     setError(null)
@@ -26,6 +25,16 @@ export function SignIn({ notice, onSignedIn }: Props) {
       setError(signInError(err))
       setBusy(false)
     }
+  }
+
+  function submit(e: FormEvent) {
+    e.preventDefault()
+    signIn(token)
+  }
+
+  function change(e: ChangeEvent<HTMLInputElement>) {
+    setToken(e.target.value)
+    if ((e.nativeEvent as InputEvent).inputType === 'insertFromPaste') signIn(e.target.value)
   }
 
   return (
@@ -44,7 +53,7 @@ export function SignIn({ notice, onSignedIn }: Props) {
           autoComplete="current-password"
           autoFocus
           value={token}
-          onChange={(e) => setToken(e.target.value)}
+          onChange={change}
           aria-invalid={error ? true : undefined}
           aria-describedby={error ? 'token-error' : undefined}
         />

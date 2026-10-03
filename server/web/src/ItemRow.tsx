@@ -3,7 +3,7 @@ import type { Item, ItemPatch, Preview } from './api'
 import { Checkbox } from './Checkbox'
 import { DeleteIcon, DragIcon } from './icons'
 import { LinkPreview } from './LinkPreview'
-import { motionOf, motionRef } from './motion'
+import { hurry, motionOf, motionRef } from './motion'
 import { TitleField } from './TitleField'
 
 type Props = {
@@ -62,12 +62,16 @@ export function ItemRow({
         className="item-checkbox"
         checked={item.checked}
         label={item.title}
-        onChange={(checked) => onPatch({ checked })}
+        onChange={(checked) => {
+          hurry()
+          onPatch({ checked })
+        }}
       />
       <TitleField
         value={item.title}
         label="Item title"
         onSave={(title) => onPatch({ title })}
+        onClear={onDelete}
         onPasteLines={onPasteLines}
       />
       {item.link && preview && (
@@ -87,7 +91,10 @@ export function ItemRow({
         type="button"
         aria-label={`Delete ${item.title}`}
         title="Delete"
-        onClick={onDelete}
+        onClick={() => {
+          hurry()
+          onDelete()
+        }}
       >
         <DeleteIcon />
       </button>

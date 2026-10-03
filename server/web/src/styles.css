@@ -57,13 +57,14 @@
   --md-sys-elevation-3: 0 1px 3px rgb(0 0 0 / 0.3), 0 4px 8px 3px rgb(0 0 0 / 0.15);
 
   /* M3 Expressive springs sampled into linear(); (damping ratio, stiffness): fast spatial (0.6, 800),
-     default spatial (0.8, 380), default effects (1, 1600). Durations are each spring's settle time. */
+     default spatial (0.8, 380), default effects (1, 1600). Durations are each spring's settle time, divided
+     by the --motion-speed that motion.ts sets while quick checks and deletes hurry the list. */
   --md-spring-fast-spatial: linear(0, 0.041, 0.145, 0.283, 0.435, 0.584, 0.72, 0.836, 0.929, 0.999, 1.047, 1.077, 1.092, 1.095, 1.089, 1.079, 1.065, 1.051, 1.037, 1.024, 1.014, 1.005, 0.999, 0.995, 0.992, 0.991, 0.991, 0.992, 0.993, 0.994, 0.995, 0.997, 1);
-  --md-spring-fast-spatial-duration: 350ms;
+  --md-spring-fast-spatial-duration: calc(350ms / var(--motion-speed, 1));
   --md-spring-default-spatial: linear(0, 0.027, 0.096, 0.188, 0.291, 0.397, 0.499, 0.593, 0.677, 0.75, 0.811, 0.862, 0.903, 0.936, 0.961, 0.98, 0.994, 1.003, 1.009, 1.013, 1.015, 1.015, 1.015, 1.014, 1.012, 1.011, 1.009, 1.007, 1.006, 1.005, 1.004, 1.003, 1);
-  --md-spring-default-spatial-duration: 410ms;
+  --md-spring-default-spatial-duration: calc(410ms / var(--motion-speed, 1));
   --md-spring-effects: linear(0, 0.157, 0.41, 0.623, 0.771, 0.866, 0.923, 0.957, 0.976, 0.987, 0.993, 0.996, 1);
-  --md-spring-effects-duration: 210ms;
+  --md-spring-effects-duration: calc(210ms / var(--motion-speed, 1));
 
   --font: 'Roboto Flex', Roboto, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --mono: ui-monospace, 'Roboto Mono', SFMono-Regular, Menlo, Consolas, monospace;

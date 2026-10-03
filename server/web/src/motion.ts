@@ -20,7 +20,35 @@ export const SPRINGS = {
 
 const STEP = 1 / 240
 
+/** How close together checks and deletes must come to hurry the list, and how long it hurries after the last one. */
+const HURRY_MS = 500
+const HURRY_SPEED = 2
+
 export const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
+
+let speed = 1
+let lastAction = -Infinity
+let calmTimer = 0
+
+/**
+ * Call on every check or delete. One within HURRY_MS of the previous one speeds up all motion, CSS
+ * animations included, until HURRY_MS passes without another.
+ */
+export function hurry() {
+  const now = performance.now()
+  const quick = now - lastAction < HURRY_MS
+  lastAction = now
+  if (!quick) return
+  setSpeed(HURRY_SPEED)
+  clearTimeout(calmTimer)
+  calmTimer = window.setTimeout(() => setSpeed(1), HURRY_MS)
+}
+
+function setSpeed(next: number) {
+  speed = next
+  // styles.css divides its animation durations by this.
+  document.documentElement.style.setProperty('--motion-speed', String(next))
+}
 
 export class Spring {
   value: number
@@ -73,7 +101,7 @@ function loop(now: number) {
   // Capped so a stalled or backgrounded tab resumes the motion instead of skipping to its end.
   const dt = Math.min(Math.max(now - lastFrame, 0) / 1000, 1 / 30)
   lastFrame = now
-  for (const animation of running) if (!animation.tick(dt)) running.delete(animation)
+  for (const animation of running) if (!animation.tick(dt * speed)) running.delete(animation)
   frame = running.size ? requestAnimationFrame(loop) : 0
 }
 
@@ -313,7 +341,7 @@ function fadeOut(m: Motion) {
   ;(m.layer ?? document.body).append(ghost)
   const remove = () => ghost.remove()
   ghost
-    .animate([{ opacity: 1 }, { opacity: 0, scale: 0.94 }], { duration: 200, easing: 'ease-in' })
+    .animate([{ opacity: 1 }, { opacity: 0, scale: 0.94 }], { duration: 200 / speed, easing: 'ease-in' })
     .finished.then(remove, remove)
 }
 

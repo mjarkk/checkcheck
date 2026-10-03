@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { MAX_ITEM_TITLE } from './api'
+import { arrowToLine, focusEnd, lineAbove, lineBelow } from './lines'
 import { isPaste, markUnsaved, pastedLines, SAVE_DELAY_MS, singleLine } from './saving'
 
 type Props = {
@@ -7,11 +8,13 @@ type Props = {
   label: string
   /** Called with a trimmed, non-empty title that differs from `value`. */
   onSave: (title: string) => void
+  /** Called when focus leaves the field with no title in it. */
+  onClear: () => void
   /** Gets a paste of two or more lines, which leaves the field as it was. */
   onPasteLines: (lines: string[]) => void
 }
 
-export function TitleField({ value, label, onSave, onPasteLines }: Props) {
+export function TitleField({ value, label, onSave, onClear, onPasteLines }: Props) {
   // null while not focused, so the field shows `value` and follows changes from the server.
   const [draft, setDraft] = useState<string | null>(null)
   const draftRef = useRef<string | null>(null)
@@ -54,7 +57,7 @@ export function TitleField({ value, label, onSave, onPasteLines }: Props) {
         aria-label={label}
         value={shown}
         maxLength={MAX_ITEM_TITLE}
-        enterKeyHint="done"
+        enterKeyHint="next"
         onFocus={() => edit(value)}
         onChange={(e) => change(e.target.value, isPaste(e.nativeEvent))}
         onPaste={(e) => {
@@ -64,14 +67,29 @@ export function TitleField({ value, label, onSave, onPasteLines }: Props) {
           onPasteLines(lines)
         }}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === 'Escape') {
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            const below = lineBelow(e.currentTarget)
+            if (below) focusEnd(below)
+            else e.currentTarget.blur()
+          } else if (e.key === 'Escape') {
             e.preventDefault()
             e.currentTarget.blur()
+          } else if (e.key === 'Backspace' && e.currentTarget.value === '') {
+            // Like an empty line in a text editor: the caret moves to the end of the line above.
+            e.preventDefault()
+            const above = lineAbove(e.currentTarget)
+            if (above) focusEnd(above)
+            else e.currentTarget.blur()
+          } else {
+            arrowToLine(e)
           }
         }}
         onBlur={() => {
           flush()
-          edit(null)
+          // Stays empty rather than showing `value` again while the row leaves.
+          if (draftRef.current?.trim() === '') onClear()
+          else edit(null)
         }}
       />
     </span>

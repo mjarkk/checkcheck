@@ -1,6 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { MAX_ITEM_TITLE, type Item } from './api'
 import { AddIcon } from './icons'
+import { arrowToLine, focusEnd, lineAbove } from './lines'
 import { motionRef } from './motion'
 import { isPaste, markUnsaved, pastedLines, SAVE_DELAY_MS, singleLine } from './saving'
 
@@ -160,6 +161,13 @@ export function AddItemLine({
             } else if (e.key === 'Escape') {
               e.preventDefault()
               e.currentTarget.blur()
+            } else if (e.key === 'Backspace' && e.currentTarget.value === '') {
+              const above = lineAbove(e.currentTarget)
+              if (!above) return
+              e.preventDefault()
+              focusEnd(above)
+            } else {
+              arrowToLine(e)
             }
           }}
           onBlur={finish}
