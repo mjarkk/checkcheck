@@ -8,6 +8,7 @@ import 'controls.dart';
 import 'feedback.dart';
 import 'motion.dart';
 import 'scan_screen.dart';
+import 'title_field.dart' show isPaste;
 
 class SetupScreen extends StatefulWidget {
   const SetupScreen({
@@ -32,6 +33,9 @@ class SetupScreen extends StatefulWidget {
 class _SetupScreenState extends State<SetupScreen> {
   late final _url = TextEditingController(text: widget.initialUrl);
   final _token = TextEditingController();
+
+  /// The token before the last edit, to tell a paste from typing.
+  String _lastToken = '';
   bool _obscureToken = true;
   bool _connecting = false;
 
@@ -48,10 +52,19 @@ class _SetupScreenState extends State<SetupScreen> {
       selection: TextSelection.collapsed(offset: link.server.length),
     );
     _token.text = link.token;
+    _lastToken = link.token;
   }
 
   void _onUrlChanged(String text) {
     if (parseConnectUri(text) case final link?) _fill(link);
+  }
+
+  /// Like the web's sign-in, a pasted token connects at once, when there is
+  /// a server to connect to.
+  void _onTokenChanged(String text) {
+    final pasted = isPaste(_lastToken, text);
+    _lastToken = text;
+    if (pasted && _url.text.trim().isNotEmpty) _connect();
   }
 
   Future<void> _scan() async {
@@ -150,6 +163,7 @@ class _SetupScreenState extends State<SetupScreen> {
               autocorrect: false,
               enableSuggestions: false,
               textInputAction: TextInputAction.done,
+              onChanged: _onTokenChanged,
               onSubmitted: (_) => _connect(),
               decoration: InputDecoration(
                 labelText: 'Token',

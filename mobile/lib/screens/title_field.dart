@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'controls.dart';
+import 'lines.dart';
 import 'motion.dart';
 
 /// The API's limit on item titles.
@@ -63,6 +64,62 @@ class _SingleLine extends TextInputFormatter {
   }
 }
 
+/// What [newValue] put in place of [oldValue]'s selection, or, when the
+/// lengths don't fit that, what differs between the two.
+String _inserted(TextEditingValue oldValue, TextEditingValue newValue) {
+  final before = oldValue.text;
+  final after = newValue.text;
+  final TextSelection(:start, :end) = oldValue.selection;
+  final cursor = newValue.selection.extentOffset;
+  if (oldValue.selection.isValid &&
+      end <= before.length &&
+      start <= cursor &&
+      cursor <= after.length &&
+      after.length - cursor == before.length - end) {
+    return after.substring(start, cursor);
+  }
+  final shorter = math.min(before.length, after.length);
+  var head = 0;
+  while (head < shorter && before.codeUnitAt(head) == after.codeUnitAt(head)) {
+    head++;
+  }
+  var tail = 0;
+  while (tail < shorter - head &&
+      before.codeUnitAt(before.length - 1 - tail) ==
+          after.codeUnitAt(after.length - 1 - tail)) {
+    tail++;
+  }
+  return after.substring(head, after.length - tail);
+}
+
+/// Runs [callback] after the frame: the field is still applying the edit
+/// that led to it.
+void _afterEdit(VoidCallback callback) => WidgetsBinding.instance
+  ..addPostFrameCallback((_) => callback())
+  ..ensureVisualUpdate();
+
+/// iOS types the return key's line break into the text, as does a hardware
+/// Enter; this hands it to [onEnter] and keeps the field's text.
+class _Enter extends TextInputFormatter {
+  const _Enter(this.onEnter);
+
+  final VoidCallback onEnter;
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final text = newValue.text;
+    if (!text.contains('\n') && !text.contains('\r')) return newValue;
+    if (_inserted(oldValue, newValue) case '\n' || '\r' || '\r\n') {
+      _afterEdit(onEnter);
+      return oldValue;
+    }
+    return newValue;
+  }
+}
+
 /// Hands a paste of several lines to [onLines] and keeps the field's text.
 class _PastedLines extends TextInputFormatter {
   const _PastedLines(this.onLines);
@@ -78,43 +135,8 @@ class _PastedLines extends TextInputFormatter {
     if (!text.contains('\n') && !text.contains('\r')) return newValue;
     final lines = pastedLines(_inserted(oldValue, newValue));
     if (lines.length < 2) return newValue;
-    // After the frame: the field is still applying this edit.
-    WidgetsBinding.instance
-      ..addPostFrameCallback((_) => onLines(lines))
-      ..ensureVisualUpdate();
+    _afterEdit(() => onLines(lines));
     return oldValue;
-  }
-
-  /// What [newValue] put in place of [oldValue]'s selection, or, when the
-  /// lengths don't fit that, what differs between the two.
-  static String _inserted(
-    TextEditingValue oldValue,
-    TextEditingValue newValue,
-  ) {
-    final before = oldValue.text;
-    final after = newValue.text;
-    final TextSelection(:start, :end) = oldValue.selection;
-    final cursor = newValue.selection.extentOffset;
-    if (oldValue.selection.isValid &&
-        end <= before.length &&
-        start <= cursor &&
-        cursor <= after.length &&
-        after.length - cursor == before.length - end) {
-      return after.substring(start, cursor);
-    }
-    final shorter = math.min(before.length, after.length);
-    var head = 0;
-    while (head < shorter &&
-        before.codeUnitAt(head) == after.codeUnitAt(head)) {
-      head++;
-    }
-    var tail = 0;
-    while (tail < shorter - head &&
-        before.codeUnitAt(before.length - 1 - tail) ==
-            after.codeUnitAt(after.length - 1 - tail)) {
-      tail++;
-    }
-    return after.substring(head, after.length - tail);
   }
 }
 
@@ -127,8 +149,8 @@ class TitleInput extends StatelessWidget {
     required this.focusNode,
     required this.label,
     required this.onChanged,
-    this.onSubmitted,
-    this.onEditingComplete,
+    required this.onEnter,
+    required this.onBackspaceWhenEmpty,
     this.onPasteLines,
     this.placeholder,
     this.dimmed = false,
@@ -139,8 +161,13 @@ class TitleInput extends StatelessWidget {
   final FocusNode focusNode;
   final String label;
   final ValueChanged<String> onChanged;
-  final ValueChanged<String>? onSubmitted;
-  final VoidCallback? onEditingComplete;
+
+  /// Enter or the keyboard's return key, which types no line break.
+  final VoidCallback onEnter;
+
+  /// On iOS only hardware keyboards report it: iOS's own keyboard sends
+  /// nothing for a Backspace in an empty field.
+  final VoidCallback onBackspaceWhenEmpty;
 
   /// Gets the [pastedLines] of a paste with two or more of them, which then
   /// leaves the text as it was. Without it, that paste becomes one line.
@@ -169,9 +196,10 @@ class TitleInput extends StatelessWidget {
             minLines: 1,
             maxLines: null,
             keyboardType: TextInputType.multiline,
-            textInputAction: TextInputAction.done,
+            textInputAction: TextInputAction.newline,
             textCapitalization: TextCapitalization.sentences,
             inputFormatters: [
+              _Enter(onEnter),
               if (onPasteLines case final onLines?) _PastedLines(onLines),
               const _SingleLine(),
               LengthLimitingTextInputFormatter(maxItemTitle),
@@ -190,16 +218,26 @@ class TitleInput extends StatelessWidget {
               ),
             ),
             onChanged: onChanged,
-            onSubmitted: onSubmitted,
-            onEditingComplete: onEditingComplete,
             onTapOutside: (_) => focusNode.unfocus(),
           ),
         ),
       ),
     );
-    return CallbackShortcuts(
-      bindings: {
-        const SingleActivator(LogicalKeyboardKey.escape): focusNode.unfocus,
+    return Focus(
+      canRequestFocus: false,
+      skipTraversal: true,
+      onKeyEvent: (_, event) {
+        if (event is KeyUpEvent) return KeyEventResult.ignored;
+        final key = event.logicalKey;
+        if (key == LogicalKeyboardKey.escape) {
+          focusNode.unfocus();
+          return KeyEventResult.handled;
+        }
+        if (key == LogicalKeyboardKey.backspace && controller.text.isEmpty) {
+          onBackspaceWhenEmpty();
+          return KeyEventResult.handled;
+        }
+        return arrowToLine(context, this, event);
       },
       child: ListenableBuilder(
         listenable: focusNode,
@@ -251,6 +289,7 @@ class TitleField extends StatefulWidget {
     required this.value,
     required this.label,
     required this.onSave,
+    required this.onClear,
     this.onPasteLines,
     this.dimmed = false,
   });
@@ -258,6 +297,9 @@ class TitleField extends StatefulWidget {
   final String value;
   final String label;
   final ValueChanged<String> onSave;
+
+  /// Called when focus leaves the field with no title in it.
+  final VoidCallback onClear;
 
   /// See [TitleInput.onPasteLines].
   final ValueChanged<List<String>>? onPasteLines;
@@ -294,8 +336,31 @@ class _TitleFieldState extends State<TitleField> {
       return;
     }
     _flush();
+    // Stays empty rather than showing the value again while the row leaves.
+    if (_draft?.trim().isEmpty ?? false) {
+      widget.onClear();
+      return;
+    }
     _draft = null;
     _show(widget.value);
+  }
+
+  void _enter() {
+    if (lineBelow(context, _focus) case final below?) {
+      focusEnd(below);
+    } else {
+      _focus.unfocus();
+    }
+  }
+
+  /// Like an empty line in a text editor: the caret moves to the end of the
+  /// line above.
+  void _backspaceWhenEmpty() {
+    if (lineAbove(context, _focus) case final above?) {
+      focusEnd(above);
+    } else {
+      _focus.unfocus();
+    }
   }
 
   void _show(String text) {
@@ -353,6 +418,8 @@ class _TitleFieldState extends State<TitleField> {
     label: widget.label,
     dimmed: widget.dimmed,
     onChanged: _changed,
+    onEnter: _enter,
+    onBackspaceWhenEmpty: _backspaceWhenEmpty,
     onPasteLines: switch (widget.onPasteLines) {
       // Saved first, so the Add items screen names the item by what was
       // typed.

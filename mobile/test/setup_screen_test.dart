@@ -32,9 +32,10 @@ void main() {
 
   Finder field(String label) => find.widgetWithText(TextField, label);
 
+  /// Fills in the token first: pasted after the URL, it connects at once.
   Future<void> connect(WidgetTester tester, String url, String token) async {
-    await tester.enterText(field('Server URL'), url);
     await tester.enterText(field('Token'), token);
+    await tester.enterText(field('Server URL'), url);
     await tester.tap(find.text('Connect'));
     await tester.pumpAndSettle();
   }
@@ -50,6 +51,28 @@ void main() {
     expect(store.token, 'dev');
   });
 
+  testWidgets('a token pasted after the URL connects at once', (tester) async {
+    await pumpSetup(tester, FakeServer(token: 'dev').client);
+    await tester.enterText(field('Server URL'), 'http://localhost:8081');
+
+    await tester.enterText(field('Token'), 'dev');
+    await tester.pumpAndSettle();
+
+    expect(connected.single.token, 'dev');
+  });
+
+  testWidgets('a typed token waits for Connect', (tester) async {
+    await pumpSetup(tester, FakeServer(token: 'dev').client);
+    await tester.enterText(field('Server URL'), 'http://localhost:8081');
+
+    for (final typed in ['d', 'de', 'dev']) {
+      await tester.enterText(field('Token'), typed);
+    }
+    await tester.pumpAndSettle();
+
+    expect(connected, isEmpty);
+  });
+
   testWidgets('shows a disabled busy button while connecting', (tester) async {
     await pumpSetup(
       tester,
@@ -58,8 +81,8 @@ void main() {
         throw http.ClientException('refused');
       }),
     );
-    await tester.enterText(field('Server URL'), 'http://localhost:8081');
     await tester.enterText(field('Token'), 'dev');
+    await tester.enterText(field('Server URL'), 'http://localhost:8081');
     FilledButton button(String label) => tester.widget(
       find.ancestor(
         of: find.text(label),

@@ -127,7 +127,7 @@ class FadeIn extends StatelessWidget {
 
 /// A row's `item-in` on mount when [animateIn], and its `item-out` once
 /// [leaving] turns true; [onLeft] fires when that ends. A leaving row takes
-/// no taps, like the web's `inert`.
+/// no taps or focus, like the web's `inert`.
 class RowPresence extends StatefulWidget {
   const RowPresence({
     super.key,
@@ -200,6 +200,9 @@ class _RowPresenceState extends State<RowPresence>
         ),
       );
     },
-    child: IgnorePointer(ignoring: widget.leaving, child: widget.child),
+    child: IgnorePointer(
+      ignoring: widget.leaving,
+      child: ExcludeFocus(excluding: widget.leaving, child: widget.child),
+    ),
   );
 }

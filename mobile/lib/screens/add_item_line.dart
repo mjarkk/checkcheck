@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'item_row.dart';
+import 'lines.dart';
 import 'title_field.dart';
 
 /// The web's AddItemLine: what is typed becomes an item the way a title
@@ -159,9 +160,12 @@ class _AddItemLineState extends State<AddItemLine> {
               radius: 12,
               onChanged: _changed,
               onPasteLines: widget.onPasteLines,
-              // Keeps the keyboard up for the next item.
-              onEditingComplete: () {},
-              onSubmitted: (_) => _finish(),
+              onEnter: _finish,
+              onBackspaceWhenEmpty: () {
+                if (lineAbove(context, _focus) case final above?) {
+                  focusEnd(above);
+                }
+              },
             ),
           ),
         ],

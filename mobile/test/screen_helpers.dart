@@ -66,6 +66,20 @@ Finder addLine(String label) => find.byWidgetPredicate(
 Finder addField(String label) =>
     find.descendant(of: addLine(label), matching: find.byType(EditableText));
 
+EditableText focusedField(WidgetTester tester) => tester
+    .widgetList<EditableText>(find.byType(EditableText))
+    .singleWhere((field) => field.focusNode.hasFocus);
+
+/// Presses the keyboard's return key in the focused field, which types a
+/// line break over its selection, like iOS's keyboard does.
+Future<void> pressReturn(WidgetTester tester) async {
+  final value = focusedField(tester).controller.value;
+  tester.testTextInput.updateEditingValue(
+    value.replaced(value.selection, '\n'),
+  );
+  await tester.pump();
+}
+
 /// The PATCH bodies the server got, oldest first.
 List<String> patches(FakeServer server) => [
   for (final request in server.requests)

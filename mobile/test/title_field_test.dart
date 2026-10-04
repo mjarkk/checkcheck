@@ -7,8 +7,12 @@ import 'screen_helpers.dart';
 
 void main() {
   late List<String> saved;
+  late int cleared;
 
-  setUp(() => saved = []);
+  setUp(() {
+    saved = [];
+    cleared = 0;
+  });
 
   Future<void> pumpField(
     WidgetTester tester,
@@ -23,6 +27,7 @@ void main() {
               value: value,
               label: 'Item title',
               onSave: saved.add,
+              onClear: () => cleared++,
               onPasteLines: onPasteLines,
             ),
             const TextField(key: Key('other')),
@@ -101,17 +106,67 @@ void main() {
     expect(shown(tester), 'Milk');
   });
 
-  testWidgets('the done key leaves the field and saves', (tester) async {
+  testWidgets('the keyboard shows a return key, not done', (tester) async {
+    await pumpField(tester, 'Milk');
+
+    expect(
+      tester.widget<EditableText>(field()).textInputAction,
+      TextInputAction.newline,
+    );
+  });
+
+  testWidgets('Enter on the last line leaves the field and saves', (
+    tester,
+  ) async {
     await pumpField(tester, 'Milk');
     await tester.tap(field());
     await tester.pump();
     await type(tester, '!');
 
-    await tester.testTextInput.receiveAction(TextInputAction.done);
-    await tester.pump();
+    await pressReturn(tester);
 
     expect(saved, ['Milk!']);
     expect(tester.widget<EditableText>(field()).focusNode.hasFocus, isFalse);
+  });
+
+  testWidgets('Escape leaves the field', (tester) async {
+    await pumpField(tester, 'Milk');
+    await tester.tap(field());
+    await tester.pump();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pump();
+
+    expect(tester.widget<EditableText>(field()).focusNode.hasFocus, isFalse);
+  });
+
+  testWidgets('leaving it empty clears it and keeps it empty', (tester) async {
+    await pumpField(tester, 'Milk');
+    await tester.tap(field());
+    await tester.pump();
+    await tester.enterText(field(), ' ');
+
+    await tester.tap(find.byKey(const Key('other')));
+    await tester.pump();
+
+    expect(cleared, 1);
+    expect(saved, isEmpty);
+    expect(shown(tester), ' ');
+  });
+
+  testWidgets('Backspace in an empty field with no line above leaves it', (
+    tester,
+  ) async {
+    await pumpField(tester, 'Milk');
+    await tester.tap(field());
+    await tester.pump();
+    await tester.enterText(field(), '');
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
+    await tester.pump();
+
+    expect(tester.widget<EditableText>(field()).focusNode.hasFocus, isFalse);
+    expect(cleared, 1);
   });
 
   testWidgets('line breaks become one space', (tester) async {

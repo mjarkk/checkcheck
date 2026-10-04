@@ -86,7 +86,7 @@ void main() {
     await tester.pump(saveDelay);
     await type(tester, ' ');
 
-    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await pressReturn(tester);
     await tester.pump();
 
     expect(calls, ['create Milk', 'release 1']);
@@ -95,7 +95,7 @@ void main() {
     expect(tester.testTextInput.isVisible, isTrue);
 
     await type(tester, 'Eggs');
-    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await pressReturn(tester);
     await tester.pump();
     expect(calls, ['create Milk', 'release 1', 'create Eggs', 'release 2']);
   });
@@ -110,7 +110,7 @@ void main() {
     await tester.pump(saveDelay);
     await type(tester, 'k');
 
-    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await pressReturn(tester);
     await tester.pump(saveDelay);
 
     expect(calls, ['create Mil', 'rename 1 Milk', 'release 1']);
@@ -177,7 +177,7 @@ void main() {
 
     await tester.enterText(field(), '');
     await tester.pump(saveDelay);
-    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await pressReturn(tester);
     await tester.pump();
 
     expect(calls, ['create Milk', 'discard 1']);

@@ -16,6 +16,7 @@ import 'deleted_screen.dart';
 import 'feedback.dart';
 import 'item_row.dart';
 import 'layout_motion.dart';
+import 'lines.dart';
 import 'list_drag.dart';
 import 'more_menu.dart';
 import 'motion.dart';
@@ -579,9 +580,11 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
       ],
       child: ConstrainedBox(
         constraints: BoxConstraints(minHeight: done && spread ? 56 : 0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: spaced,
+        child: LineGroup(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: spaced,
+          ),
         ),
       ),
     );

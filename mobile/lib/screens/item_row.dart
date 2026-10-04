@@ -6,6 +6,7 @@ import 'checkbox.dart';
 import 'controls.dart';
 import 'link_preview.dart';
 import 'motion.dart';
+import 'spring.dart';
 import 'title_field.dart';
 
 /// A list's rows touch, with small inner corners and large outer ones; on a
@@ -150,7 +151,10 @@ class _ItemRowState extends State<ItemRow> {
               ExpressiveCheckbox(
                 value: item.checked,
                 semanticLabel: item.title,
-                onChanged: (checked) => widget.onToggle?.call(checked),
+                onChanged: (checked) {
+                  hurry();
+                  widget.onToggle?.call(checked);
+                },
               ),
               Expanded(
                 child: TitleField(
@@ -158,6 +162,7 @@ class _ItemRowState extends State<ItemRow> {
                   label: 'Item title',
                   dimmed: item.checked,
                   onSave: (title) => widget.onRename?.call(title),
+                  onClear: () => widget.onDelete?.call(),
                   onPasteLines: widget.onPasteLines,
                 ),
               ),
@@ -165,7 +170,10 @@ class _ItemRowState extends State<ItemRow> {
                 icon: const Icon(Icons.delete_outline),
                 tooltip: 'Delete',
                 semanticLabel: 'Delete ${item.title}',
-                onPressed: () => widget.onDelete?.call(),
+                onPressed: () {
+                  hurry();
+                  widget.onDelete?.call();
+                },
               ),
               DragHandle(onPointerDown: widget.onGrab),
             ],

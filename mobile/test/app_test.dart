@@ -111,7 +111,7 @@ void main() {
     await pumpApp(tester);
 
     await tester.enterText(addField('Add item to Groceries'), 'Eggs');
-    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await pressReturn(tester);
     await tester.pumpAndSettle();
 
     expect(server.items.single['title'], 'Eggs');

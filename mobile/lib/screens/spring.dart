@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/scheduler.dart';
@@ -38,6 +39,26 @@ abstract final class Springs {
 }
 
 const _step = 1 / 240;
+
+/// motion.ts's HURRY_MS and HURRY_SPEED: how close together checks and
+/// deletes must come to hurry the list, and how long it hurries after the
+/// last one.
+const hurryWindow = Duration(milliseconds: 500);
+const _hurrySpeed = 2.0;
+
+/// Runs for [hurryWindow] after each check or delete.
+Timer? _recentAction;
+
+/// motion.ts's `hurry`: call on every check or delete. One within
+/// [hurryWindow] of the previous one speeds up all motion until
+/// [hurryWindow] passes without another.
+void hurry() {
+  // Every ticker reads the dilated frame clock, so this speeds up the springs
+  // and the implicit animations alike.
+  if (_recentAction?.isActive ?? false) timeDilation = 1 / _hurrySpeed;
+  _recentAction?.cancel();
+  _recentAction = Timer(hurryWindow, () => timeDilation = 1);
+}
 
 /// motion.ts's `Spring`, stepped the same way so both apps move alike.
 class Spring {
