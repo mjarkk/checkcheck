@@ -88,7 +88,7 @@ flutter test
   checkbox, logo)
 - `lib/screens/spring.dart`, `layout_motion.dart`, `list_drag.dart`: the
   webapp's springs, its layout animation (rows spring to wherever a change
-  puts them) and its drag and drop, ported from `server/web/src/motion.ts`
+  puts them) and its drag and drop, ported from `web/src/motion.ts`
   and `drag.ts`
 - `lib/theme.dart`: Material 3 colours from seed `#6750A4` with the vibrant
   variant, and the webapp's type scale in the bundled Roboto Flex

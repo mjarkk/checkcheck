@@ -46,7 +46,7 @@ final largeButton = ButtonStyle(
 );
 
 // The SDK has no Material 3 Expressive components; theming approximates them.
-// Sizes and weights mirror server/web/src/styles.css.
+// Sizes and weights mirror web/src/styles.css.
 ThemeData buildTheme(Brightness brightness) {
   final colors = ColorScheme.fromSeed(
     seedColor: seedColor,

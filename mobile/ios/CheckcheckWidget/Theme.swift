@@ -1,7 +1,7 @@
 import CoreText
 import SwiftUI
 
-/// The app's color roles, from server/web/src/styles.css's
+/// The app's color roles, from web/src/styles.css's
 /// `--md-sys-color-*` tokens.
 struct Palette: Sendable {
   let primary: Color
@@ -146,7 +146,7 @@ struct CheckTick: Shape {
   }
 }
 
-/// The tick of server/web/src/favicon.svg, in its 32-unit space.
+/// The tick of web/src/favicon.svg, in its 32-unit space.
 struct LogoTick: Shape {
   func path(in rect: CGRect) -> Path {
     polyline([(9, 16.5), (13.5, 21), (23, 11.5)], units: 32, in: rect)

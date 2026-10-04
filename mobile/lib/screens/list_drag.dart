@@ -10,7 +10,7 @@ import '../theme.dart';
 import 'layout_motion.dart';
 import 'spring.dart';
 
-// server/web/src/drag.ts's constants.
+// web/src/drag.ts's constants.
 
 /// Pointer travel at which a held row lets go of its neighbours and follows
 /// the pointer.
@@ -47,7 +47,7 @@ typedef DropTarget = ({Object zone, int index});
 typedef Lifted<Id> = ({Id id, double height, DropTarget target});
 
 /// Dragging rows by their handles between the [DragZone]s of one
-/// [DragArea], with the motion of server/web/src/drag.ts.
+/// [DragArea], with the motion of web/src/drag.ts.
 ///
 /// While [lifted], the host hides that row (still mounted, without its
 /// motion key), renders a [DragGap] carrying the row's motion key at the

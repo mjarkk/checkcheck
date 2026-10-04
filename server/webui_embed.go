@@ -10,14 +10,14 @@ import (
 	"checkcheck/internal/spa"
 )
 
-// Fails to compile until the frontend is built into web/dist; use -tags dev
-// to run without it.
+// Fails to compile until the frontend is built into webui/; use -tags dev to
+// run without it.
 //
-//go:embed all:web/dist
+//go:embed all:webui
 var embedded embed.FS
 
 func webUI() http.Handler {
-	dist, err := fs.Sub(embedded, "web/dist")
+	dist, err := fs.Sub(embedded, "webui")
 	if err != nil {
 		panic(err)
 	}

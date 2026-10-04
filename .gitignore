@@ -5,5 +5,5 @@
 
 server/data/
 server/checkcheck
-server/web/node_modules/
-server/web/dist/
+web/node_modules/
+server/webui/

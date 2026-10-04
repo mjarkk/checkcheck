@@ -295,7 +295,7 @@ private struct ExpressiveCheckbox: View {
   }
 }
 
-/// The app's logo: server/web/src/favicon.svg.
+/// The app's logo: web/src/favicon.svg.
 private struct LogoMark: View {
   let size: CGFloat
 

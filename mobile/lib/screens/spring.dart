@@ -12,7 +12,7 @@ class SpringConfig {
   final double damping;
 }
 
-/// The web app's SPRINGS (server/web/src/motion.ts).
+/// The web app's SPRINGS (web/src/motion.ts).
 abstract final class Springs {
   /// Checking, adding, deleting and recategorizing items.
   static const layout = SpringConfig(380, 0.72);

@@ -31,7 +31,7 @@ class _LogoPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    // Drawn in the 32-unit space of server/web/src/favicon.svg.
+    // Drawn in the 32-unit space of web/src/favicon.svg.
     canvas.scale(size.width / 32);
     canvas.drawRRect(
       RRect.fromRectAndRadius(

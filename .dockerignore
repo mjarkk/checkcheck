@@ -1,0 +1,9 @@
+*
+!server
+!web
+server/data
+server/checkcheck
+server/webui
+server/*.test
+web/node_modules
+**/.DS_Store

@@ -15,16 +15,16 @@ run = "go run -tags dev ."
 
 [tasks."dev:web"]
 description = "Vite dev server on 0.0.0.0:5173, proxying /api and /mcp to :8181"
-dir = "{{config_root}}/server/web"
+dir = "{{config_root}}/web"
 depends = ["web:install"]
 run = "npm run dev"
 
 [tasks."web:install"]
-dir = "{{config_root}}/server/web"
+dir = "{{config_root}}/web"
 run = "npm install"
 
 [tasks."web:build"]
-dir = "{{config_root}}/server/web"
+dir = "{{config_root}}/web"
 depends = ["web:install"]
 run = "npm run build"
 
@@ -35,7 +35,7 @@ depends = ["web:build"]
 run = "go build -trimpath -o checkcheck ."
 
 [tasks."docker:build"]
-dir = "{{config_root}}/server"
+dir = "{{config_root}}"
 run = "docker build -t checkcheck ."
 
 [tasks.test]
